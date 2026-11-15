@@ -17,6 +17,18 @@ Documentação da arquitetura corporativa em nuvem da Oficina Mecânica.
   - [ADR-003 — Segregação em 4 repositórios](adrs/ADR-003-quatro-repositorios.md)
   - [ADR-004 — Observabilidade com New Relic](adrs/ADR-004-observabilidade.md)
 
+## Fase 4 — microsserviços e saga (rascunho)
+
+Plano da fase: [`docs/fase4`](../fase4/README.md).
+
+- [Contratos de mensagens v1](../contratos-mensagens.md): catálogo, filas do RabbitMQ e máquina de estados da saga.
+- **ADRs** (status *Proposto* até a revisão do grupo e os spikes da Etapa 0):
+  - [ADR-005 — Divisão em três microsserviços](adrs/ADR-005-microsservicos.md)
+  - [ADR-006 — Saga orquestrada no `os-service`](adrs/ADR-006-saga-orquestrada.md)
+  - [ADR-007 — Mensageria com RabbitMQ e MassTransit 8.x](adrs/ADR-007-rabbitmq-masstransit.md)
+  - [ADR-008 — Persistência poliglota](adrs/ADR-008-persistencia-poliglota.md)
+  - [ADR-009 — Pagamento com Mercado Pago (Checkout Pro)](adrs/ADR-009-mercado-pago.md)
+
 ## Mapa dos repositórios
 
 | Repositório | Papel |
