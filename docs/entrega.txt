@@ -1,0 +1,106 @@
+========================================================================
+TECH CHALLENGE FIAP - 15SOAT - FASE 3
+Documento de Entrega
+========================================================================
+
+Preencha os campos [preencher] e revise antes de enviar no Portal do Aluno.
+Os itens abaixo seguem o enunciado da Fase 3.
+
+
+------------------------------------------------------------------------
+1. IDENTIFICACAO
+------------------------------------------------------------------------
+Curso / Turma...: Software Architecture - 15SOAT
+Fase............: 3 - Operacao Corporativa em Nuvem
+Grupo...........: [preencher: nome/numero do grupo]
+Data de entrega.: [preencher]
+
+Integrantes:
+  - Nome: [preencher]   RM: [preencher]   GitHub: [@usuario]
+  - Nome: [preencher]   RM: [preencher]   GitHub: [@usuario]
+  - Nome: [preencher]   RM: [preencher]   GitHub: [@usuario]
+
+
+------------------------------------------------------------------------
+2. LINKS DOS 4 REPOSITORIOS
+------------------------------------------------------------------------
+1) oficina-lambda-auth   - Function Serverless de autenticacao por CPF + API Gateway
+   URL: [preencher]
+
+2) oficina-infra-k8s     - Terraform: VPC + EKS + add-ons
+   URL: [preencher]
+
+3) oficina-infra-database - Terraform: RDS MySQL gerenciado
+   URL: [preencher]
+
+4) oficina-app           - Aplicacao .NET (Clean Architecture) + manifestos K8s
+   URL: [preencher]
+
+
+------------------------------------------------------------------------
+3. VIDEO DE DEMONSTRACAO (<= 15 min)
+------------------------------------------------------------------------
+Plataforma: YouTube / Vimeo (publico ou nao listado)
+URL.......: [preencher]
+Duracao...: [preencher] (maximo 15:00)
+
+Demonstra: autenticacao com CPF; execucao da pipeline CI/CD; deploy
+automatizado; consumo das APIs protegidas; dashboard de monitoramento
+com analise ao vivo; logs e traces.
+
+
+------------------------------------------------------------------------
+4. LINKS DAS DOCUMENTACOES
+------------------------------------------------------------------------
+Documentacao arquitetural (indice).: [preencher]/docs/architecture/README.md
+Diagrama de Componentes............: [preencher]/docs/architecture/component-diagram.md
+Diagramas de Sequencia.............: [preencher]/docs/architecture/sequence-diagrams.md
+Modelo de Dados (ER + banco).......: [preencher]/docs/architecture/database-model.md
+RFCs (nuvem, banco, autenticacao)..: [preencher]/docs/architecture/rfcs/
+ADRs (comunicacao, HPA, repos, obs): [preencher]/docs/architecture/adrs/
+Observabilidade (New Relic)........: [preencher]/docs/observability/README.md
+Swagger (API principal)............: [preencher] (ex.: https://<host>/swagger)
+Colecao Postman....................: [preencher]/lambda-auth/docs/postman_collection.json
+Dashboard New Relic (link publico).: [preencher]
+
+
+------------------------------------------------------------------------
+5. CONFIRMACAO DO USUARIO soat-architecture
+------------------------------------------------------------------------
+Usuario "soat-architecture" adicionado como colaborador em TODOS os 4
+repositorios (Settings > Collaborators and teams):
+
+  [ ] oficina-lambda-auth    - evidencia: [anexar print]
+  [ ] oficina-infra-k8s      - evidencia: [anexar print]
+  [ ] oficina-infra-database - evidencia: [anexar print]
+  [ ] oficina-app            - evidencia: [anexar print]
+
+
+------------------------------------------------------------------------
+6. ARQUITETURA (RESUMO)
+------------------------------------------------------------------------
+Solucao em AWS: API Gateway como entrada unica; Lambda (Node/TS) autentica
+por CPF e emite JWT, com Lambda Authorizer protegendo /api/*; aplicacao
+.NET em EKS (com HPA) acessando RDS MySQL gerenciado; New Relic para APM,
+logs estruturados e alertas. IaC em Terraform; CI/CD por repositorio com
+GitHub Actions e deploy automatico nas branches homolog/prod.
+
+(Inclua aqui o diagrama de componentes - docs/architecture/component-diagram.md.)
+
+
+------------------------------------------------------------------------
+7. CHECKLIST DE CONFORMIDADE (auto-avaliacao)
+------------------------------------------------------------------------
+  [ ] API Gateway implementado e roteando as rotas.
+  [ ] Rotas sensiveis protegidas por autenticacao via CPF.
+  [ ] Function Serverless valida CPF, consulta o cliente e devolve JWT.
+  [ ] 4 repositorios separados, cada um com CI/CD e deploy automatico.
+  [ ] Branch main protegida (sem commits diretos) + PRs obrigatorios.
+  [ ] Banco gerenciado (RDS MySQL), cluster K8s escalavel e Terraform.
+  [ ] Monitoramento: latencia, CPU/memoria, healthchecks/uptime, alertas de falha de OS.
+  [ ] Logs estruturados (JSON) com correlacao entre requisicoes.
+  [ ] Dashboards: volume diario de OS, tempo medio por status, erros de integracao.
+  [ ] Documentacao: componentes, sequencia, RFCs, ADRs, ER + justificativa do banco.
+  [ ] READMEs completos e links de deploy ativos.
+  [ ] Video (<= 15 min) e usuario soat-architecture nos 4 repos.
+========================================================================
