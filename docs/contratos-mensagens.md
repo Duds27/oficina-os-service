@@ -50,6 +50,7 @@ O evento interno passa pelo broker para aproveitar o outbox, o retry e o trace.
 
 - JSON (System.Text.Json, serializador padrão do MassTransit 8).
 - Dinheiro em `decimal`, em reais (BRL), com 2 casas. Quantidade também em `decimal`.
+  - **No fio, `decimal` vai como texto** (`"quantidade": "1.5"`): é o que o serializador do MassTransit faz, para não perder precisão. Quem lê com o MassTransit aceita texto e número; o exemplo da seção 2.2 usa número e também é lido. Confirmado nos testes de contrato do `execution-service`.
 - Datas sempre em UTC.
 - Campo com valores fixos é `string`, nunca `enum`. Um `enum` vira número no JSON e passa a depender da ordem declarada em cada repo.
 - Listas em `IReadOnlyList<T>`, nunca `null` (lista vazia quando não houver itens).
