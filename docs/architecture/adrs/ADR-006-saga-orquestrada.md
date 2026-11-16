@@ -1,6 +1,6 @@
 # ADR-006 — Saga orquestrada no `os-service`
 
-- **Status:** Proposto (rascunho da Etapa 0; a persistência no MySQL é validada no spike S1)
+- **Status:** Proposto (rascunho da Etapa 0, aguardando revisão do grupo). Validado tecnicamente no [spike S1](../../../spikes/S1-masstransit-saga/README.md).
 - **Data:** 2026-11-15
 
 ## Contexto
@@ -48,6 +48,14 @@ Quando isso acontece, é preciso desfazer o que já foi feito: devolver peças a
   - **O `os-service` conhece a sequência do processo:** contratos versionados e comandos explícitos limitam o acoplamento ao formato das mensagens.
   - **O orquestrador é ponto central:** se o `os-service` cair, as mensagens ficam na fila e são processadas quando ele voltar (outbox + filas duráveis). Nada se perde.
   - **Eventos fora de ordem ou duplicados:** `Ignore` explícito por estado + inbox do MassTransit.
+
+## Validação (spike S1, 2026-11-15)
+
+Rodou com o `AppDbContext` real, MySQL 8.4 e RabbitMQ 4.1 (Testcontainers):
+
+- A OS e o evento `OrdemServicoAberta` são gravados na mesma transação, pelo outbox. Sem `SaveChanges`, nada sai.
+- A saga nasce no MySQL e envia o comando ao outro serviço. Ao receber a resposta, muda de estado e altera o status da OS **na mesma transação**: a activity usa o mesmo `DbContext` da saga.
+- A concorrência otimista funciona no MySQL com `DateTime RowVersion` + `IsRowVersion()` (`timestamp(6) ... ON UPDATE`).
 
 ## Alternativas descartadas
 

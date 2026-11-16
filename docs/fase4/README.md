@@ -74,7 +74,7 @@ O catálogo e o estoque ficam no `os-service` porque a reserva de peças já exi
 ### 3.3 Comunicação
 
 - **Assíncrona (principal): RabbitMQ + MassTransit 8.x.** O MassTransit traz a state machine de saga, outbox/inbox transacional com EF Core, retry/redelivery, filas `_error` e *test harness* (base dos testes de saga e BDD).
-  - Fixar a versão **8.x** (Apache 2.0). A v9 tem licença comercial.
+  - Fixar a versão **8.4.1** (Apache 2.0). A v9 tem licença comercial, e a 8.5.x exige EF Core 9, incompatível com o Pomelo 8 ([spike S1](../../spikes/S1-masstransit-saga/README.md)).
   - O RabbitMQ roda local (docker-compose/Testcontainers) e no EKS do mesmo jeito. A UI de management também ajuda na demonstração em vídeo.
 - **Síncrona (REST):** só na borda (API Gateway → serviços), na Lambda → `os-service` (validação de CPF) e no Billing → Mercado Pago.
   - Nenhum serviço chama outro de forma síncrona dentro da saga, para evitar acoplamento temporal.
@@ -392,7 +392,7 @@ Os contratos de mensagens são o ponto de integração entre as frentes: mudar u
 | Risco | Mitigação |
 | --- | --- |
 | Custo AWS (EKS + 2 RDS + NLB) | Ambiente de dev em kind/docker-compose; `terraform destroy` fora das janelas de teste e gravação; RDS `db.t4g.micro` |
-| Licença MassTransit v9 (comercial) | Fixar MassTransit **8.x** (Apache 2.0); alternativa: Wolverine |
+| Licença MassTransit v9 (comercial) | Fixar MassTransit **8.4.1** (Apache 2.0; a 8.5.x exige EF Core 9); alternativa: Wolverine |
 | Imagens/charts Bitnami mudaram de distribuição | Usar o **RabbitMQ Cluster Operator** oficial |
 | Webhook do MP precisa de URL pública | Rota pública no API Gateway; em dev local, túnel (ex.: cloudflared) |
 | Trace não atravessar o broker | Spike S2 logo na semana 1; plano B = OpenTelemetry → OTLP New Relic |

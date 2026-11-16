@@ -17,11 +17,12 @@ Deixar os três repositórios prontos para trabalho em paralelo, com contratos d
 
 ### 0.2 Repositórios
 
-- [ ] Renomear `tech-challenge-fiap` → `oficina-os-service` (*Settings → General → Repository name*). O GitHub redireciona as URLs antigas.
-  - Rodar `git remote set-url origin https://github.com/Duds27/oficina-os-service.git` nos clones locais.
-  - Atualizar os links nos READMEs de `oficina-lambda-auth`, `oficina-infra-k8s` e `oficina-infra-database`.
-- [ ] Criar `oficina-billing-service` e `oficina-execution-service` **vazios** no GitHub (sem README/.gitignore, para evitar o problema de push descrito na Fase 3).
-- [x] Esqueleto comum nos dois repos novos, copiando o padrão do `os-service`. Gerado localmente em `../oficina-billing-service` e `../oficina-execution-service`, com `git init` feito e ainda sem commit:
+- [x] Renomear `tech-challenge-fiap` → `oficina-os-service` (feito com `gh repo rename` em 2026-11-15). O GitHub redireciona as URLs antigas.
+  - Nos outros clones locais: `git remote set-url origin https://github.com/Duds27/oficina-os-service.git`.
+  - [ ] Atualizar os links nos READMEs de `oficina-lambda-auth`, `oficina-infra-k8s` e `oficina-infra-database` (opcional, porque o redirecionamento funciona).
+  - [ ] Conferir a política de confiança da role de deploy (OIDC) na AWS. Se ela citar `repo:Duds27/tech-challenge-fiap:*`, trocar por `repo:Duds27/oficina-os-service:*`.
+- [x] Criar [`oficina-billing-service`](https://github.com/Duds27/oficina-billing-service) e [`oficina-execution-service`](https://github.com/Duds27/oficina-execution-service), públicos e vazios. O primeiro push foi o esqueleto, direto na `main`.
+- [x] Esqueleto comum nos dois repos novos, copiando o padrão do `os-service`. Clones locais em `../oficina-billing-service` e `../oficina-execution-service`:
   - Solução .NET 8 com `src/Oficina.<Servico>.Domain|Application|Infrastructure|API` e `tests/Oficina.<Servico>.UnitTests|IntegrationTests`.
   - `Directory.Build.props` (nullable, analyzers, code style no build), `src/Directory.Build.props` (`TreatWarningsAsErrors`), `Directory.Packages.props` (versões centralizadas), `global.json` (.NET 8) e `.editorconfig`.
   - Dockerfile multi-stage com usuário não-root.
@@ -29,17 +30,24 @@ Deixar os três repositórios prontos para trabalho em paralelo, com contratos d
   - `/health/live` e `/health/ready`.
   - Serilog JSON + `CorrelationIdMiddleware` (cópia do `os-service`) e Swagger com JWT.
   - 5 testes por serviço: middleware (unitários) e health checks + correlação (integração, `WebApplicationFactory`).
-  - Build sem avisos e testes verdes nos dois. O build da imagem Docker ainda não foi testado localmente.
+  - Build sem avisos, testes verdes e build da imagem Docker aprovado no primeiro CI dos dois.
 - [x] CI mínimo (`ci.yml`: restore → build → test → build da imagem) nos dois repos novos, com o job `build-test-quality`, que vira o *required check*.
   - O `os-service` já tem CI equivalente, com o job "Build e Testes".
   - Na Etapa 4, renomear esse job para `build-test-quality` junto com a atualização da proteção da `main`.
-- [ ] Proteger a `main` nos 3 repos: PR obrigatório, status checks obrigatórios e branch atualizada.
+- [x] Proteger a `main` nos 3 repos (2026-11-15):
+  - PR obrigatório com 1 aprovação.
+  - Status check obrigatório: `Build e Testes` no os-service e `build-test-quality` nos novos.
+  - Branch atualizada antes do merge.
+  - Force-push e exclusão bloqueados.
+  - Administradores podem furar a regra, como já era no `tech-challenge-fiap`.
 
 ### 0.3 SonarCloud
 
-- [ ] Criar a organização no SonarCloud vinculada ao GitHub e um projeto por microsserviço.
-- [ ] **Desligar a "Automatic Analysis"**. Projetos .NET precisam de análise via CI com `dotnet-sonarscanner`.
-- [ ] Cadastrar o secret `SONAR_TOKEN` em cada repo. A análise completa entra no CI na [Etapa 4](etapa-4-plataforma-cicd.md).
+- [x] Criar a organização no SonarCloud vinculada ao GitHub (`duds27`) e um projeto por microsserviço (`Duds27_oficina-os-service`, `Duds27_oficina-billing-service`, `Duds27_oficina-execution-service`).
+  - [x] A importação inicial também criou projetos para `oficina-infra-database`, `oficina-infra-k8s`, `oficina-lambda-auth` e para o repo privado `project-correlated-streams`. Os quatro foram removidos, e a importação automática de repos novos foi desligada (*Organization settings → Organization binding*).
+  - [ ] A organização foi criada no período de teste do plano **Team** (pago). Antes de o teste acabar, mudar para o plano **Free**, que atende repos públicos, sem cadastrar cartão.
+- [x] **Desligar a "Automatic Analysis"** nos 3 projetos de serviço. Projetos .NET precisam de análise via CI com `dotnet-sonarscanner`.
+- [x] Cadastrar o secret `SONAR_TOKEN` nos 3 repos de serviço (2026-11-15). Ele só será testado de fato quando a análise entrar no CI, na [Etapa 4](etapa-4-plataforma-cicd.md).
 
 ### 0.4 Contratos de mensagens (v1)
 
@@ -57,7 +65,7 @@ Deixar os três repositórios prontos para trabalho em paralelo, com contratos d
 
 | Spike | Pergunta | Pronto quando |
 | --- | --- | --- |
-| **S1** — MassTransit + saga | A state machine persistida em MySQL (EF Core, concorrência otimista) + outbox funciona com o `AppDbContext` atual? O `[EntityName]` faz produtor e consumidor com namespaces diferentes usarem o mesmo exchange? | PoC: evento publicado → saga criada no MySQL → comando enviado, com o RabbitMQ em Docker. Mais uma mensagem entregue entre dois projetos com namespaces diferentes. Confirmar também a imagem `rabbitmq:4.1-management` dos composes com o MassTransit 8.x. |
+| **S1** — MassTransit + saga ✅ ([resultado](../../spikes/S1-masstransit-saga/README.md): aprovado, versão fixada em 8.4.1) | A state machine persistida em MySQL (EF Core, concorrência otimista) + outbox funciona com o `AppDbContext` atual? O `[EntityName]` faz produtor e consumidor com namespaces diferentes usarem o mesmo exchange? | PoC: evento publicado → saga criada no MySQL → comando enviado, com o RabbitMQ em Docker. Mais uma mensagem entregue entre dois projetos com namespaces diferentes. Confirmar também a imagem `rabbitmq:4.1-management` dos composes com o MassTransit 8.x. |
 | **S2** — Trace pelo broker | O agente .NET do New Relic propaga o trace pelo RabbitMQ/MassTransit? Ou precisamos de OpenTelemetry → OTLP? | Um trace no New Relic com o span do publisher e o do consumer ligados |
 | **S3** — Mercado Pago sandbox | Conseguimos criar preferência, pagar com cartão de teste, receber o webhook e estornar? | Os 4 passos executados; payloads de exemplo salvos para os testes com WireMock |
 | **S4** — RabbitMQ no EKS | O RabbitMQ Cluster Operator sobe com volume persistente (EBS CSI) no cluster atual? | `RabbitmqCluster` saudável, UI acessível por port-forward e mensagem publicada de um pod |
@@ -80,7 +88,7 @@ Deixar os três repositórios prontos para trabalho em paralelo, com contratos d
 
 ## Pronto quando
 
-- [ ] Os 3 repos de serviço existem, com `main` protegida e CI verde.
-- [ ] O SonarCloud está configurado nos 3 (projeto criado e token cadastrado).
+- [x] Os 3 repos de serviço existem, com `main` protegida e CI verde.
+- [x] O SonarCloud está configurado nos 3 (projeto criado e token cadastrado).
 - [ ] Os contratos v1 estão aprovados pelas frentes A, B e C.
-- [ ] Os 4 spikes estão concluídos, com a decisão registrada.
+- [ ] Os 4 spikes estão concluídos, com a decisão registrada. Só o S1 foi feito.

@@ -25,18 +25,18 @@ Transformar o monólito no `os-service`, dono do ciclo de vida da OS, e implemen
 - [ ] Extrair a devolução de estoque de `RemoverItemAsync` para um método reutilizável (ex.: `EstoqueService.DevolverPecas(ordem)`), usado também pela compensação.
 - [ ] Migration EF Core cobrindo os itens acima, mais as tabelas da saga e do MassTransit (1.2).
 
-### 1.2 Mensageria (MassTransit 8.x + RabbitMQ)
+### 1.2 Mensageria (MassTransit 8.4.1 + RabbitMQ)
 
-- [ ] Pacotes, todos fixados em 8.x: `MassTransit`, `MassTransit.RabbitMQ`, `MassTransit.EntityFrameworkCore`.
+- [ ] Pacotes, todos fixados em **8.4.1**: `MassTransit`, `MassTransit.RabbitMQ`, `MassTransit.EntityFrameworkCore`. A 8.5.x exige EF Core 9 ([spike S1](../../spikes/S1-masstransit-saga/README.md)). O spike tem o código de referência da configuração abaixo.
 - [ ] No `AppDbContext`:
   - `modelBuilder.AddInboxStateEntity()`, `AddOutboxMessageEntity()` e `AddOutboxStateEntity()`.
-  - Mapeamento de `OrdemServicoSagaState`: `CorrelationId` PK, `CurrentState`, `OsId`, `OrcamentoId`, `PagamentoId`, `PrazoExpiraEm`, `RowVersion` para concorrência otimista, datas.
+  - Mapeamento de `OrdemServicoSagaState`: `CorrelationId` PK, `CurrentState`, `OsId`, `OrcamentoId`, `PagamentoId`, `PrazoExpiraEm`, `RowVersion` para concorrência otimista (`DateTime` + `IsRowVersion()`, que o Pomelo mapeia para `timestamp(6) ... ON UPDATE`; validado no spike S1), datas.
 - [ ] Registro no `Infrastructure/DependencyInjection.cs`:
   - `AddEntityFrameworkOutbox<AppDbContext>(o => { o.UseMySql(); o.UseBusOutbox(); })`.
   - `AddSagaStateMachine<OrdemServicoStateMachine, OrdemServicoSagaState>()` com `EntityFrameworkRepository` (`ExistingDbContext<AppDbContext>`, `UseMySql`, concorrência otimista).
   - `UsingRabbitMq` com host/usuário/senha vindos de configuração (`RabbitMq__*`) e `ConfigureEndpoints` (nomes kebab-case).
   - Retry: `UseMessageRetry` com backoff exponencial (ex.: 5 tentativas) + `UseDelayedRedelivery` (minutos). Esgotou → fila `_error`.
-- [ ] Contratos em `Application/Contracts`, copiados da [definição de referência](../contratos-mensagens.md#21-definição-de-referência-c), com `[MessageUrn]` e `[EntityName]`. Registrar `EndpointConvention.Map<T>` para cada comando com as filas da [seção 3 do documento](../contratos-mensagens.md#3-topologia-no-rabbitmq).
+- [ ] Contratos em `Application/Contracts`, copiados da [definição de referência](../contratos-mensagens.md#21-definição-de-referência-c), com `[MessageUrn]` e `[EntityName]`. Enviar cada comando com endereço explícito (`GetSendEndpoint(new Uri("queue:<fila>"))`), usando as filas da [seção 3 do documento](../contratos-mensagens.md#3-topologia-no-rabbitmq).
 - [ ] Health check do bus no `/health/ready` (o MassTransit registra o check; conferir a tag usada no filtro).
 - [ ] `docker-compose.yml`: adicionar `rabbitmq:management` e as variáveis `RabbitMq__*`.
 

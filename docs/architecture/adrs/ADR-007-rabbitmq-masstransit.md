@@ -1,6 +1,6 @@
 # ADR-007 — Mensageria com RabbitMQ e MassTransit 8.x
 
-- **Status:** Proposto (rascunho da Etapa 0; validação nos spikes S1 e S4)
+- **Status:** Proposto (rascunho da Etapa 0). Spike [S1](../../../spikes/S1-masstransit-saga/README.md) concluído; falta o S4 (RabbitMQ no EKS).
 - **Data:** 2026-11-15
 
 ## Contexto
@@ -16,7 +16,10 @@ A saga ([ADR-006](ADR-006-saga-orquestrada.md)) precisa de mensageria assíncron
 - **Broker: RabbitMQ.**
   - No EKS, via **RabbitMQ Cluster Operator** oficial, com volume EBS (gp3).
   - Localmente, a imagem `rabbitmq:management`.
-- **Biblioteca: MassTransit**, com versão **fixada em 8.x** (licença Apache 2.0). A partir da v9, a licença é comercial.
+- **Biblioteca: MassTransit**, com versão **fixada em 8.4.1** (licença Apache 2.0) nos três serviços.
+  - A partir da v9, a licença é comercial.
+  - A partir da 8.5.0, o `MassTransit.EntityFrameworkCore` exige EF Core 9, que o Pomelo 8 (os) e o Npgsql 8 (billing) não aceitam. Por isso a última 8.x compatível é a 8.4.1.
+- **Broker validado no spike S1:** imagem `rabbitmq:4.1-management`. O MassTransit não usa recursos depreciados do RabbitMQ 4.x (nada de `transient_nonexcl_queues`).
 - **Recursos do MassTransit usados:**
   - State machine de saga com repositório EF Core.
   - **Outbox e inbox transacionais** no EF Core (`os-service` e `billing-service`).
@@ -38,7 +41,10 @@ A saga ([ADR-006](ADR-006-saga-orquestrada.md)) precisa de mensageria assíncron
 - **Negativas / mitigação:**
   - **Mais um componente com estado para operar no cluster:** operator oficial, PVC e métricas Prometheus no New Relic.
   - **Custo:** 1 réplica em `homolog`. Para `prod`, 3 réplicas com *quorum queues*, documentadas.
-  - **Fixação na 8.x:** sem as novidades da v9. Plano de saída: Wolverine (MIT) ou o transporte SQS do próprio MassTransit.
+  - **Fixação na 8.4.1:** sem as correções da 8.5.x nem as novidades da v9.
+    - Para ir à 8.5.x, é preciso migrar os serviços para EF Core 9 (Pomelo 9 / Npgsql 9).
+    - Plano de saída de longo prazo: Wolverine (MIT) ou o transporte SQS do próprio MassTransit.
+  - **Métricas do management depreciadas no RabbitMQ 4.x** (`management_metrics_collection`): as métricas vão pelo plugin Prometheus (Etapa 5).
   - **O DynamoDB não é suportado pelo outbox do MassTransit:** o `execution-service` implementa um outbox próprio, com deduplicação por `MessageId`.
 
 ## Alternativas descartadas
