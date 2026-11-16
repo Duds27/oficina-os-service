@@ -1,5 +1,7 @@
 # Tech Challenge FIAP — Oficina Mecânica Backend
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=Duds27_oficina-os-service&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Duds27_oficina-os-service) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Duds27_oficina-os-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Duds27_oficina-os-service)
+
 API REST para gestão de uma oficina mecânica de médio porte, desenvolvida como Tech Challenge do curso de Software Architecture (15SOAT) da FIAP.
 
 ---
@@ -766,7 +768,16 @@ cd OficinaMecanicaBackend
 dotnet test --settings coverlet.runsettings
 ```
 
-Gera um `coverage.cobertura.xml` por projeto de teste em `tests/*/TestResults/`. Exclusões, configuradas em `coverlet.runsettings`: `Migrations/` (inclui os `*.Designer.cs`), `Program.cs` e `DTOs/`. Na Fase 4, a cobertura de linhas dos dois projetos juntos ficou em torno de 95%. O gate de 80% no CI entra na Etapa 4 (ReportGenerator + SonarCloud).
+Gera um `coverage.cobertura.xml` e um `coverage.opencover.xml` por projeto de teste em `tests/*/TestResults/`. Exclusões, configuradas em `coverlet.runsettings`: `Migrations/` (inclui os `*.Designer.cs`), `Program.cs` e `DTOs/`. Em 2026-11-16, a cobertura de linhas dos dois projetos juntos ficou em 95,5%, com 237 testes.
+
+### CI
+
+O `.github/workflows/ci.yml` roda em PR e push na `main`, e o CD o reutiliza (`workflow_call`). O job `build-test-quality` é o *required check* da `main`: restore, build, testes, SonarCloud, gate de cobertura e build da imagem Docker.
+
+- **Gate de cobertura:** o ReportGenerator junta a cobertura de todos os projetos de teste, e o passo falha se a de linhas ficar abaixo de 80%. O resumo vai para a página do run, e o relatório fica no artifact `coverage`.
+- **SonarCloud** (projeto `Duds27_oficina-os-service`): análise com `dotnet-sonarscanner`, cobertura em opencover e `sonar.qualitygate.wait=true`. Quality gate reprovado derruba o job. Em PR de fork ou do Dependabot, sem o `SONAR_TOKEN`, os passos do Sonar são pulados.
+- O Sonar usa as mesmas exclusões do `coverlet.runsettings`: as migrations saem da análise toda; `Program.cs` e `DTOs/` saem só da cobertura.
+- A análise local com SonarQube em Docker (seção abaixo) continua valendo para quem quiser rodar sem o CI.
 
 ---
 
