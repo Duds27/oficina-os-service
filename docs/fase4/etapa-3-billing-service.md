@@ -13,23 +13,27 @@ Gerar o orçamento e enviá-lo ao cliente, registrar a aprovação ou recusa, co
 
 ### 3.1 Domínio
 
-- [ ] Agregado `Orcamento`:
+- [x] Agregado `Orcamento`:
   - Dados: `Id`, `CorrelationId`, `OsId`, `NumeroOS`, `Cliente {Id, Nome, Email}` (snapshot), `Itens[]` (snapshot com preço), `ValorTotal`, `Status`, `ValidoAte`, datas.
   - Status: `Gerado → Enviado → Aprovado | Recusado | Cancelado | Expirado`.
   - Total recalculado a partir dos itens. Não confiar no valor recebido sem conferir.
-- [ ] Agregado `Pagamento`:
+- [x] Agregado `Pagamento`:
   - Dados: `Id`, `OrcamentoId`, `Valor`, `Status`, `PreferenceId`, `LinkPagamento`, `MpPaymentId`, `RefundId`, datas.
   - Status: `Pendente → Aprovado | Recusado | Estornado`.
-- [ ] Regras:
-  - Só aprova ou recusa orçamento `Enviado` e dentro da validade.
+  - **Na implementação:** entrou o status `Cancelado`, para o pagamento pendente de um orçamento cancelado (regra 2 da seção 5 dos contratos).
+- [x] Regras:
+  - Só aprova ou recusa orçamento `Enviado` e dentro da validade. Vencido vira `Expirado`.
   - Estorno só de pagamento `Aprovado`. Pedido repetido não estorna duas vezes.
+  - **Regras 1, 2 e 3 da seção 5:** pagamento aprovado depois do cancelamento do orçamento, ou depois de uma recusa, é estornado sozinho.
+  - **Regra 5:** `CancelarOrcamento` antes do `GerarOrcamento` registra o orçamento já cancelado.
 
 ### 3.2 Persistência (PostgreSQL)
 
-- [ ] EF Core + `Npgsql.EntityFrameworkCore.PostgreSQL`, com migrations versionadas e aplicadas na inicialização (com retry, mesmo padrão do `os-service`).
-- [ ] Tabelas do outbox/inbox do MassTransit 8.4.1, a mesma versão do `os-service` (`AddEntityFrameworkOutbox<BillingDbContext>(o => o.UsePostgres())`).
-- [ ] Tabela `NotificacoesOutbox` para o e-mail simulado do orçamento (mesmo padrão da Fase 2).
-- [ ] Índices: `OsId`, `CorrelationId` (único por orçamento ativo), `MpPaymentId` (único).
+- [x] EF Core + `Npgsql.EntityFrameworkCore.PostgreSQL`, com migrations versionadas e aplicadas na inicialização (com retry, mesmo padrão do `os-service`).
+- [x] Tabelas do outbox/inbox do MassTransit 8.4.1, a mesma versão do `os-service` (`AddEntityFrameworkOutbox<BillingDbContext>(o => o.UsePostgres())`).
+- [x] Tabela `NotificacoesOutbox` para o e-mail simulado do orçamento (mesmo padrão da Fase 2).
+- [x] Índices: `OsId`, `CorrelationId` (único por orçamento ativo), `MpPaymentId` (único).
+  - **Na implementação:** `CorrelationId` é único sem filtro (uma saga, um orçamento). Assim o pedido atrasado encontra o cancelamento antecipado. Concorrência otimista pela coluna `xmin`.
 
 ### 3.3 Mensageria
 
@@ -40,7 +44,9 @@ Gerar o orçamento e enviá-lo ao cliente, registrar a aprovação ou recusa, co
 | `EstornarPagamento` | Refund no gateway, `Pagamento → Estornado` e orçamento `Cancelado` | `PagamentoEstornado` |
 | `ProcessarNotificacaoPagamento` (interno) | Consulta o pagamento no gateway e atualiza o status | `PagamentoConfirmado` ou `PagamentoRecusado` |
 
-- [ ] Falha definitiva no estorno (retries esgotados) → mensagem em `_error` + **alerta crítico**, que exige intervenção manual. Documentar no README.
+- [x] Falha definitiva no estorno (retries esgotados) → mensagem em `_error` + **alerta crítico**, que exige intervenção manual. Documentar no README.
+  - Um consumidor de `Fault<EstornarPagamento>` loga em nível crítico, com a OS, o pagamento, o CorrelationId e o que fazer. Vira alerta no New Relic na Etapa 5.
+  - Estorno repetido não estorna de novo, mas responde `PagamentoEstornado` de novo, porque a saga espera essa resposta em `AguardandoEstorno`.
 
 ### 3.4 API
 
@@ -53,57 +59,68 @@ Gerar o orçamento e enviá-lo ao cliente, registrar a aprovação ou recusa, co
 | POST | `/webhooks/mercadopago` | assinatura `x-signature` | Notificação do Mercado Pago |
 | POST | `/dev/pagamentos/{id}/simular?resultado=aprovado\|recusado` | só em `Development` | Simula o webhook com o gateway Fake |
 
-- [ ] Na aprovação, **conferir que o `clienteId` do token (login por CPF) é o dono do orçamento**. Senão, 403.
-- [ ] Fluxo da aprovação:
+- [x] Na aprovação, **conferir que o `clienteId` do token (login por CPF) é o dono do orçamento**. Senão, 403.
+  - **Decidido na implementação:** o atendente (`Admin`) também registra a decisão do cliente, o que permite a demonstração local sem a Lambda. O mecânico só consulta. As consultas seguem a mesma regra: o cliente só vê os orçamentos e pagamentos dele.
+- [x] Fluxo da aprovação:
   1. Orçamento → `Aprovado` e criação de `Pagamento` `Pendente`.
   2. Chamada ao gateway para criar a preferência, com `X-Idempotency-Key = pagamentoId`.
   3. Salvar `PreferenceId`/`LinkPagamento` e publicar `OrcamentoAprovado` pelo outbox.
-- [ ] Na recusa: orçamento → `Recusado` e publicar `OrcamentoRecusado`.
+  - **Na implementação:** os três passos são uma gravação só. Se o gateway falhar, nada é gravado e a API responde 503.
+- [x] Na recusa: orçamento → `Recusado` e publicar `OrcamentoRecusado`.
 
 ### 3.5 Gateway de pagamento
 
-- [ ] Port `IGatewayPagamento`: `CriarCobranca`, `ConsultarPagamento`, `Estornar`.
-- [ ] `FakeGatewayPagamento`: link fictício e resultado controlado pelo endpoint `/dev/...`. Usado em testes, CI, compose e BDD.
-- [ ] `MercadoPagoGateway` (sandbox):
+- [x] Port `IGatewayPagamento`: `CriarCobranca`, `ConsultarPagamento`, `Estornar`.
+- [x] `FakeGatewayPagamento`: link fictício e resultado controlado pelo endpoint `/dev/...`. Usado em testes, CI, compose e BDD.
+- [x] `MercadoPagoGateway` (sandbox):
   - `HttpClient` tipado com resiliência (`Microsoft.Extensions.Http.Resilience`: timeout, retry e circuit breaker).
   - `POST /checkout/preferences` com itens, `external_reference = pagamentoId` e `notification_url` (rota pública do API Gateway).
+    - **Na implementação:** um item só, com o total, porque o Checkout Pro exige quantidade inteira e o orçamento tem quantidades decimais.
+    - **Bug encontrado nos testes:** quando o resilience handler desiste (tempo total esgotado ou circuit breaker aberto), o Polly lança `ExecutionRejectedException`. O adapter trata essa exceção como gateway indisponível; sem isso, a aprovação respondia 500.
   - `GET /v1/payments/{id}`: fonte da verdade do status (`approved` → confirmado; `rejected`/`cancelled` → recusado; `pending`/`in_process` → aguarda).
   - `POST /v1/payments/{id}/refunds` com `X-Idempotency-Key`.
-- [ ] Webhook:
+- [x] Webhook:
   1. Validar `x-signature`: HMAC-SHA256 com o segredo do webhook, sobre `id:{data.id};request-id:{x-request-id};ts:{ts};`.
   2. Rejeitar assinatura inválida com 401.
   3. Responder 200 rápido e publicar `ProcessarNotificacaoPagamento` (outbox) para processamento assíncrono.
-- [ ] Credenciais: access token de **teste** e segredo do webhook no Secrets Manager. Nunca no repositório nem no state do Terraform (3.7).
-- [ ] Seleção do adapter por configuração: `Pagamentos__Gateway = Fake | MercadoPago`.
+- [x] Credenciais: access token de **teste** e segredo do webhook no Secrets Manager. Nunca no repositório nem no state do Terraform (3.7).
+- [x] Seleção do adapter por configuração: `Pagamentos__Gateway = Fake | MercadoPago`.
 
 ### 3.6 Notificação do orçamento
 
-- [ ] Ao gerar o orçamento, gravar em `NotificacoesOutbox` um e-mail com o resumo e o link de aprovação, e logar o envio (simulado, como na Fase 2).
+- [x] Ao gerar o orçamento, gravar em `NotificacoesOutbox` um e-mail com o resumo e o link de aprovação, e logar o envio (simulado, como na Fase 2).
 
 ### 3.7 Infraestrutura própria (`/infra`, Terraform)
 
-- [ ] `aws_db_instance` PostgreSQL 16 (`db.t4g.micro`, storage gp3), sem acesso público.
+- [x] `aws_db_instance` PostgreSQL 16 (`db.t4g.micro`, storage gp3), sem acesso público.
   - Subnet group nas subnets privadas e security group que só aceita os nós do EKS.
   - Esses dados vêm do `terraform_remote_state` do `oficina-infra-k8s`.
-- [ ] Senha mestre gerenciada (`manage_master_user_password = true`) ou `random_password` → secret `billing/db` no Secrets Manager (`host`, `port`, `username`, `password`, `dbname`), no mesmo formato que o CD já lê.
-- [ ] Secret `billing/mercadopago` criado vazio pelo Terraform. O valor (token de teste + segredo do webhook) é preenchido manualmente pelo console ou CLI.
-- [ ] Repositório ECR do serviço.
-- [ ] Estado remoto no S3 + trava DynamoDB.
+  - `free_tier` (padrão `true`), como no `infra-database`: gp2 e sem retenção de backup. Com `false`, gp3 e 7 dias.
+- [x] Senha mestre gerenciada (`manage_master_user_password = true`) ou `random_password` → secret `billing/db` no Secrets Manager (`host`, `port`, `username`, `password`, `dbname`), no mesmo formato que o CD já lê.
+  - Feito com `random_password`. O nome tem o ambiente: `<projeto>-<ambiente>/billing/db`.
+- [x] Secret `billing/mercadopago` criado vazio pelo Terraform. O valor (token de teste + segredo do webhook) é preenchido manualmente pelo console ou CLI.
+- [x] Repositório ECR do serviço.
+- [x] Estado remoto no S3 + trava DynamoDB.
+- [x] `terraform test` com provider mockado (5 casos) e job `terraform` no CI.
 
 ### 3.8 Testes
 
-- [ ] **Unitários:** regras de `Orcamento` e `Pagamento`, cálculo do total, validação de assinatura (válida, inválida, `ts` adulterado).
-- [ ] **Consumers** com `ITestHarness`: geração, cancelamento e estorno (inclusive estorno repetido).
-- [ ] **Integração:** Testcontainers PostgreSQL + RabbitMQ + **WireMock.Net** simulando a API do Mercado Pago, com os payloads capturados no spike S3. Cenários:
+- [x] **Unitários:** regras de `Orcamento` e `Pagamento`, cálculo do total, validação de assinatura (válida, inválida, `ts` adulterado).
+- [x] **Consumers** com `ITestHarness`: geração, cancelamento e estorno (inclusive estorno repetido).
+- [x] **Integração:** Testcontainers PostgreSQL + RabbitMQ + **WireMock.Net** simulando a API do Mercado Pago, com os payloads capturados no spike S3. Cenários:
   - Pagamento aprovado.
   - Pagamento recusado.
   - Webhook duplicado.
   - Falha temporária da API do MP (retry).
   - Estorno.
-- [ ] **Contrato:** snapshot das mensagens.
-- [ ] Cobertura ≥ 80%.
+  - **Pendente:** os payloads seguem a documentação do Mercado Pago. Os reais do sandbox entram quando o spike S3 for feito.
+  - Também ponta a ponta com RabbitMQ 4.1 e um bus no papel do os-service, do pedido de orçamento ao estorno.
+- [x] **Contrato:** snapshot das mensagens (as 9 do catálogo e o evento interno), com o serializador do MassTransit.
+- [x] Cobertura ≥ 80%: cerca de 96% de linhas. O `coverlet.runsettings` exclui só as migrations, que são código gerado.
 
 ## PRs sugeridos
+
+Os seis estão na branch `feat/etapa-3-billing-service` do `oficina-billing-service`, um commit para cada, mais um de documentação:
 
 1. **feat: domínio Orcamento/Pagamento + persistência PostgreSQL**
 2. **feat: consumers da saga + outbox (gateway Fake)**: libera o marco da semana 3
@@ -114,7 +131,12 @@ Gerar o orçamento e enviá-lo ao cliente, registrar a aprovação ou recusa, co
 
 ## Pronto quando
 
-- [ ] No compose, com o gateway Fake: `GerarOrcamento` → aprovação → simulação de pagamento → `PagamentoConfirmado` chega ao `os-service`.
+- [x] No compose, com o gateway Fake: `GerarOrcamento` → aprovação → simulação de pagamento → `PagamentoConfirmado` chega ao `os-service`.
+  - Conferido em 2026-11-16 com os três serviços no mesmo RabbitMQ (`docker-compose.integrado.yml` no execution e no billing): OS aberta → diagnóstico → orçamento → aprovação → pagamento simulado → execução → saga `Concluida`.
+  - Na mesma rodada, uma OS com o prazo de aprovação vencido levou a saga e o orçamento a `Cancelado` (C2).
 - [ ] No sandbox: preferência criada, pagamento com cartão de teste, webhook recebido e validado, `PagamentoConfirmado` publicado e estorno realizado.
-- [ ] Um cliente não aprova orçamento de outro.
+  - Depende do spike S3: conta de teste do Mercado Pago (vendedor e comprador), token de teste e segredo do webhook, e uma URL pública para o webhook (túnel ou API Gateway).
+  - O mesmo fluxo já passa contra o Mercado Pago simulado no WireMock.
+- [x] Um cliente não aprova orçamento de outro (testes de unidade e da API: 403).
 - [ ] CI verde com cobertura ≥ 80%.
+  - Verde localmente, com 149 testes unitários, 33 de integração e cobertura em torno de 96%. Falta rodar no CI, que dispara no PR para a `main`.

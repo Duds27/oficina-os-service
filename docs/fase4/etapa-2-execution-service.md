@@ -117,7 +117,7 @@ Gerenciar a fila de execução das OS, registrar o andamento do diagnóstico e d
 
 ## PRs sugeridos
 
-Os seis estão na branch `feat/etapa-2-execution-service` do `oficina-execution-service`, um commit para cada, mais um de documentação:
+Os seis entraram na `main` do `oficina-execution-service` pelo PR #2, um commit para cada, mais um de documentação (o PR #1 foi fechado depois de um rebase da branch):
 
 1. **feat: domínio Execucao e regras de etapas**
 2. **feat: repositório DynamoDB com transações condicionais e outbox** (já com os testes de integração do repositório, contra o DynamoDB Local)
@@ -132,7 +132,10 @@ Os seis estão na branch `feat/etapa-2-execution-service` do `oficina-execution-
   - Conferido em 2026-11-16 com o compose do os-service e o `docker-compose.integrado.yml` (os dois no mesmo RabbitMQ): OS aberta → execução na fila → diagnóstico iniciado e concluído → saga em `AguardandoOrcamento`. A finalização foi conferida nos testes de integração.
 - [x] Mensagem reentregue não duplica efeito nem evento (teste com RabbitMQ e o mesmo `MessageId` duas vezes).
 - [x] A flag de *fault injection* força `ExecucaoRejeitada` (teste com RabbitMQ).
-- [ ] O Terraform aplica sem erro, e o pod acessa a tabela via IRSA, sem chaves de acesso.
-  - Validado só sem conta AWS (`validate` + `terraform test` mockado). Falta o `apply` e o pod no EKS, que dependem da Etapa 4 (manifestos, ServiceAccount anotada e trust OIDC do deploy).
-- [ ] CI verde com cobertura ≥ 80%.
-  - Verde localmente, com cobertura em torno de 97%. Falta rodar no CI, que dispara no PR para a `main`.
+- [x] CI verde com cobertura ≥ 80%.
+  - No CI do PR #2: 130 testes (100 unitários e 30 de integração) e os jobs `build-test-quality` e `terraform` verdes. Cobertura de 97,2% de linhas, calculada do relatório publicado pelo próprio CI. O gate de cobertura entra na Etapa 4.
+- **Movido para a [Etapa 4](etapa-4-plataforma-cicd.md#pronto-quando) em 2026-11-16:** o Terraform aplica sem erro, e o pod acessa a tabela via IRSA, sem chaves de acesso.
+  - Aqui, foi validado só sem conta AWS (`validate` + `terraform test` com provider mockado).
+  - Para conferir de verdade, faltam a ServiceAccount anotada e o deploy no EKS (manifestos da 4.3 e CD da 4.5), além do cluster no ar.
+
+**Etapa concluída em 2026-11-16.**
