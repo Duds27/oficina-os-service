@@ -40,7 +40,11 @@ Cada microsserviço com pipeline independente: build, testes, verificação de q
   | `POST /auth` | Lambda | — |
 
 - [ ] `/internal/*` e `/dev/*` **não** são roteados.
-- [ ] Lambda: variável `OS_SERVICE_URL` + segredo do header interno (detalhes na [Etapa 1](etapa-1-os-service.md#15-lambda-de-autenticação-oficina-lambda-auth)).
+- [ ] Lambda: variável `OS_SERVICE_URL` + segredo do header interno (detalhes na [Etapa 1](etapa-1-os-service.md#15-lambda-de-autenticação-oficina-lambda-auth)). O código e o Terraform já estão prontos desde a Etapa 1; falta o lado da AWS:
+  - Criar o secret da chave interna (`{"key":"..."}`) e injetar o mesmo valor no os-service como `InternalApi__Key`.
+  - Cadastrar no repo da Lambda as variables `OS_SERVICE_URL` (DNS do NLB interno + porta do listener do os-service) e `INTERNAL_KEY_SECRET_ID`. Sem elas, o CD falha na validação do Terraform.
+  - Passar `os_service_port` com a porta do listener do os-service (8081, se o NLB ficar com um listener por serviço). O SG da Lambda só libera essa porta.
+  - Exportar o DNS do NLB interno nos outputs do `infra-k8s`, para montar o `OS_SERVICE_URL`.
 
 ### 4.3 Manifestos Kubernetes (em cada repo de serviço)
 

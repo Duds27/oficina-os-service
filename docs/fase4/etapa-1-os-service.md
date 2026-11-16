@@ -78,10 +78,20 @@ Transformar o monólito no `os-service`, dono do ciclo de vida da OS, e implemen
 
 ### 1.5 Lambda de autenticação (`oficina-lambda-auth`)
 
-- [ ] Trocar a consulta `mysql2` ao RDS por `GET {OS_SERVICE_URL}/internal/clientes/por-cpf/{cpf}` com `X-Internal-Key`. Timeout curto, e erro claro se o serviço não responder.
-- [ ] Garantir que o JWT emitido tenha o claim `clienteId`. O `billing-service` usa esse claim para checar se quem aprova o orçamento é o dono dele.
-- [ ] Remover credenciais de banco da Lambda e a regra de security group Lambda → RDS (Terraform do repo).
-- [ ] Adaptar os testes da Lambda (mock do HTTP no lugar do banco).
+- [x] Trocar a consulta `mysql2` ao RDS por `GET {OS_SERVICE_URL}/internal/clientes/por-cpf/{cpf}` com `X-Internal-Key`. Timeout curto, e erro claro se o serviço não responder.
+  - A chave vem do Secrets Manager (`INTERNAL_KEY_SECRET_ID`, formato `{"key":"..."}`) e precisa ter o mesmo valor de `InternalApi__Key` no os-service.
+  - Timeout padrão de 3 s (`OS_SERVICE_TIMEOUT_MS`), que vale também para a leitura do corpo.
+  - Timeout, falha de rede, 5xx, 401 (chave recusada) ou corpo fora do contrato viram 503 para o cliente. A causa exata vai para o log da Lambda.
+- [x] Garantir que o JWT emitido tenha o claim `clienteId`. O `billing-service` usa esse claim para checar se quem aprova o orçamento é o dono dele.
+  - O `sub` continua com o mesmo valor. O authorizer lê `clienteId` e, em tokens antigos, cai no `sub`.
+- [x] Remover credenciais de banco da Lambda e a regra de security group Lambda → RDS (Terraform do repo).
+  - Saem o remote state do `infra-database` e o secret do banco (IAM e variáveis de ambiente). Sai também o `mysql2`.
+  - A saída do SG da Lambda fica restrita ao NLB interno (`os_service_port`, CIDR da VPC) e ao HTTPS. O 3306 não está liberado.
+  - A regra de entrada do RDS (CIDR da VPC) fica no `infra-database` e continua lá, porque também atende os nós do EKS.
+  - O CD passa a exigir as variables `OS_SERVICE_URL` e `INTERNAL_KEY_SECRET_ID` no repo. Elas só existem na AWS a partir da Etapa 4.
+- [x] Adaptar os testes da Lambda (mock do HTTP no lugar do banco).
+  - O os-service é simulado por um servidor HTTP local (`test/fakeOsService.ts`), então o `fetch` real é exercitado: header, 404, 401, 5xx, corpo inválido, timeout e conexão recusada. São 31 testes.
+  - Conferido também contra o os-service real em 2026-11-16, pelo `docker-compose`: o endpoint interno devolve o cliente, a chave errada vira erro claro e o próprio os-service aceita o token emitido.
 
 ### 1.6 Testes
 
@@ -102,7 +112,7 @@ Transformar o monólito no `os-service`, dono do ciclo de vida da OS, e implemen
 
 ## PRs sugeridos
 
-Os seis primeiros estão na branch `feat/etapa-1-os-service`, um commit para cada:
+Os seis primeiros entraram na `main` pelo PR #26, um commit para cada:
 
 1. **feat: novos status, histórico de status e CorrelationId na OS** (1.1 + testes de domínio)
 2. **feat: MassTransit + RabbitMQ + outbox/inbox** (1.2)
@@ -110,13 +120,14 @@ Os seis primeiros estão na branch `feat/etapa-1-os-service`, um commit para cad
 4. **feat: ajustes de API (entregar, histórico, saga, endpoint interno)** (1.4)
 5. **test: BDD do ciclo de vida da OS** (1.6)
 6. **test: cobertura ≥ 80%** (1.6)
-7. `oficina-lambda-auth`: **feat: autenticação consulta o os-service via HTTP** (1.5). Pendente.
+7. `oficina-lambda-auth`: **feat: autenticação consulta o os-service via HTTP** (1.5). Na branch `feat/auth-via-os-service` desse repo.
 
 ## Pronto quando
 
 - [x] A saga completa roda com os outros serviços simulados: caminho feliz e as 3 compensações.
-- [ ] O BDD está verde no CI e a cobertura passa de 80%.
-  - Verde localmente, com cobertura em torno de 95%. Falta rodar no CI, que só dispara em PR para a `main`.
+- [x] O BDD está verde no CI e a cobertura passa de 80%.
+  - No CI do PR #26: 5 cenários BDD e 232 testes, todos verdes.
+  - Cobertura de 95,6% de linhas, medida localmente com o mesmo `coverlet.runsettings`. O CI publica o relatório, mas ainda não barra por cobertura: o gate entra na Etapa 4.
 - [x] Nenhum código do `os-service` decide aprovação ou pagamento. Só reage a eventos.
-- [ ] A Lambda autentica sem acessar banco. Depende da tarefa 1.5, no `oficina-lambda-auth`.
+- [x] A Lambda autentica sem acessar banco (tarefa 1.5). Falta só o deploy na AWS, que depende da Etapa 4.
 - [x] O `docker-compose up` sobe API + MySQL + RabbitMQ, e a abertura de OS publica `SolicitarDiagnostico`. Conferido em 2026-11-16: `/health/ready` 200, saga em `AguardandoDiagnostico` e o comando na fila `execution-solicitar-diagnostico`.
