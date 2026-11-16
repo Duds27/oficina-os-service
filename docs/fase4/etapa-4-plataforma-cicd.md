@@ -152,6 +152,17 @@ jobs:
 - [ ] Script de seed: cliente, veículo, serviços e peças.
 - [ ] (Opcional) Workflow manual `e2e.yml` no `os-service`: sobe o compose no runner e roda a collection Postman com Newman.
 
+### 4.9 Mercado Pago no sandbox
+
+Veio da [Etapa 3](etapa-3-billing-service.md#pronto-quando) (spike S3). Depende da rota pública do webhook (4.2) e do `billing-service` no EKS (4.3 e 4.5).
+
+- [ ] Contas de teste do Mercado Pago (vendedor e comprador), criadas pelo grupo.
+- [ ] Token de teste e segredo do webhook no secret `billing/mercadopago`, preenchidos à mão pelo console ou CLI. Nunca no repositório nem no state do Terraform.
+- [ ] No overlay `aws` do `billing-service`: `Pagamentos__Gateway=MercadoPago` e `Pagamentos__MercadoPago__NotificationUrl` com a rota pública `POST /webhooks/mercadopago` do API Gateway.
+- [ ] Os 4 passos do spike: preferência criada, pagamento com cartão de teste, webhook recebido e validado, estorno.
+- [ ] Payloads reais salvos para os testes com WireMock, no lugar dos que seguem a documentação.
+- [ ] Resultado registrado no [ADR-009](../architecture/adrs/ADR-009-mercado-pago.md).
+
 ## PRs sugeridos
 
 1. `oficina-infra-k8s`: **infra: EBS CSI + RabbitMQ (operator) + namespaces + listeners NLB por serviço**
@@ -168,3 +179,4 @@ jobs:
 - [ ] Os 3 serviços + RabbitMQ rodam no EKS, acessíveis pelo API Gateway com JWT. O webhook é acessível sem JWT.
 - [ ] O `docker-compose.full.yml` sobe o sistema inteiro numa máquina limpa.
 - [ ] O Terraform do `execution-service` aplica sem erro, e o pod acessa a tabela via IRSA, sem chaves de acesso. Veio da [Etapa 2](etapa-2-execution-service.md#pronto-quando).
+- [ ] No sandbox do Mercado Pago: preferência criada, pagamento com cartão de teste, webhook recebido pelo API Gateway e validado, `PagamentoConfirmado` publicado e estorno realizado. Veio da [Etapa 3](etapa-3-billing-service.md#pronto-quando).
