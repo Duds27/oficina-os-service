@@ -23,7 +23,8 @@ A saga ([ADR-006](ADR-006-saga-orquestrada.md)) precisa de mensageria assíncron
 - **Recursos do MassTransit usados:**
   - State machine de saga com repositório EF Core.
   - **Outbox e inbox transacionais** no EF Core (`os-service` e `billing-service`).
-  - Retry exponencial + *delayed redelivery*, e fila `_error` quando as tentativas se esgotam.
+  - Retry exponencial e fila `_error` quando as tentativas se esgotam.
+  - *Delayed redelivery* fica para a Etapa 4: no RabbitMQ, ele exige o plugin `rabbitmq_delayed_message_exchange`, que a imagem padrão não traz.
   - `ITestHarness` para testes de consumers, da saga e BDD.
   - `ActivitySource` para traces distribuídos (OpenTelemetry).
 - **Contratos:** sem biblioteca compartilhada. Cada repo declara as classes com `[MessageUrn]` e `[EntityName]` iguais ([contratos de mensagens](../../contratos-mensagens.md)).
