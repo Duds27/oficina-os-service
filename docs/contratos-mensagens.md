@@ -26,7 +26,8 @@ Toda mensagem carrega estes campos, além dos específicos:
 - Toda classe declara dois atributos:
   - `[MessageUrn("oficina:<nome-kebab>:v1")]`: identifica o tipo do lado de quem consome.
   - `[EntityName("oficina.<nome-kebab>.v1")]`: nome do exchange no RabbitMQ.
-- Sem o `EntityName`, o exchange recebe o nome do namespace + classe. Se um repo mudar o namespace, o produtor e o consumidor passam a usar exchanges diferentes e a mensagem some sem erro. Os dois atributos deixam o nome explícito. **O spike S1 confirma esse comportamento.**
+- Sem o `EntityName`, o exchange recebe o nome do namespace + classe (ex.: `Spike.Os.Contracts:Ping`). Se dois repos usarem namespaces diferentes, o produtor e o consumidor passam a usar exchanges diferentes e a mensagem some sem erro. **Confirmado no [spike S1](../spikes/S1-masstransit-saga/README.md):** com o `EntityName`, a mensagem chega mesmo entre namespaces diferentes. Sem ele, não chega.
+- O `[ExcludeFromTopology]` no envelope (`IMensagemOS`/`MensagemOS`) impede que os tipos base virem exchanges. Também confirmado no S1.
 
 ### 1.3 Versionamento
 
@@ -324,8 +325,9 @@ public record CancelamentoSolicitado : MensagemOS
   | `billing-cancelar-orcamento` | `CancelarOrcamento` | billing |
   | `billing-estornar-pagamento` | `EstornarPagamento` | billing |
 
-  - No `os-service`, cada comando tem `EndpointConvention.Map<T>(new Uri("queue:<fila>"))`.
-  - No serviço dono, a fila é um `ReceiveEndpoint("<fila>", ...)` com o consumer do comando.
+  - No `os-service`, a saga envia cada comando com endereço explícito: `GetSendEndpoint(new Uri("queue:<fila>"))`, com as URIs numa classe de constantes. Não usar `EndpointConvention`, que é estático e global ao processo.
+  - No serviço dono, o consumer do comando é registrado com `.Endpoint(e => e.Name = "<fila>")`.
+  - O `ConfigureEndpoints` também liga essa fila a um exchange `oficina.<comando>.v1`. É inofensivo: a saga envia direto para a fila.
 
 - **Filas de evento:**
 

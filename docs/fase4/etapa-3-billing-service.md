@@ -27,7 +27,7 @@ Gerar o orçamento e enviá-lo ao cliente, registrar a aprovação ou recusa, co
 ### 3.2 Persistência (PostgreSQL)
 
 - [ ] EF Core + `Npgsql.EntityFrameworkCore.PostgreSQL`, com migrations versionadas e aplicadas na inicialização (com retry, mesmo padrão do `os-service`).
-- [ ] Tabelas do outbox/inbox do MassTransit (`AddEntityFrameworkOutbox<BillingDbContext>(o => o.UsePostgres())`).
+- [ ] Tabelas do outbox/inbox do MassTransit 8.4.1, a mesma versão do `os-service` (`AddEntityFrameworkOutbox<BillingDbContext>(o => o.UsePostgres())`).
 - [ ] Tabela `NotificacoesOutbox` para o e-mail simulado do orçamento (mesmo padrão da Fase 2).
 - [ ] Índices: `OsId`, `CorrelationId` (único por orçamento ativo), `MpPaymentId` (único).
 

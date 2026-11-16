@@ -54,7 +54,7 @@ Gerenciar a fila de execução das OS, registrar o andamento do diagnóstico e d
 
 ### 2.3 Mensageria
 
-- [ ] MassTransit 8.x + RabbitMQ, com retry/redelivery no mesmo padrão do `os-service`.
+- [ ] MassTransit 8.4.1 + RabbitMQ, com retry/redelivery no mesmo padrão do `os-service`.
 - [ ] Consumers e eventos que geram (via outbox):
 
   | Consumer | Efeito | Evento publicado |
