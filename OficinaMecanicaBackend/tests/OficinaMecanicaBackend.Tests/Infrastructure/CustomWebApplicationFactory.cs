@@ -2,7 +2,9 @@ using System.Net.Http.Json;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
+using MassTransit;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -95,6 +97,11 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
                     };
                 });
         });
+
+        // Troca o RabbitMQ pelo transporte em memória do MassTransit, mantendo a saga,
+        // o outbox e o inbox no MySQL. Os testes leem o que foi publicado/enviado pelo
+        // ITestHarness. O teste com RabbitMQ real fica em MensageriaRabbitMqTests.
+        builder.ConfigureTestServices(services => services.AddMassTransitTestHarness());
     }
 
     public static async Task<string> GetAuthTokenAsync(HttpClient client)

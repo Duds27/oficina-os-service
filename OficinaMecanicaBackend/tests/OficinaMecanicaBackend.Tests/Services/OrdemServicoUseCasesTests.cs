@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Oficina.Contracts;
 using OficinaMecanica.Application.DTOs.OrdensServico;
 using OficinaMecanica.Application.Services;
 using OficinaMecanica.Application.UseCases;
@@ -17,6 +18,7 @@ public class OrdemServicoUseCasesTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AppDbContext _db;
     private readonly FakeNotificador _notificador = new();
+    private readonly FakePublicador _publicador = new();
     private readonly OrdemServicoUseCases _useCases;
 
     public OrdemServicoUseCasesTests()
@@ -43,6 +45,7 @@ public class OrdemServicoUseCasesTests : IDisposable
         new UnitOfWork(_db),
         _notificador,
         new EstoqueService(new PecaRepository(_db)),
+        _publicador,
         logger);
 
     public void Dispose()
@@ -148,6 +151,21 @@ public class OrdemServicoUseCasesTests : IDisposable
             .ToListAsync();
         Assert.DoesNotContain(Guid.Empty, ids);
         Assert.Equal(2, ids.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task CriarAsync_PublicaOrdemServicoAbertaComOEnvelopeDaOS()
+    {
+        var (c, v) = await SeedClienteVeiculoAsync();
+
+        var result = await _useCases.CriarAsync(new CreateOrdemServicoDto(c.Id, v.Id, "Barulho no motor", null));
+
+        var os = await _db.OrdensServico.AsNoTracking().SingleAsync(o => o.Id == result.Data!.Id);
+        var evento = Assert.IsType<OrdemServicoAberta>(Assert.Single(_publicador.Publicados));
+        Assert.Equal(os.CorrelationId, evento.CorrelationId);
+        Assert.Equal(os.Id, evento.OsId);
+        Assert.Equal(os.NumeroOS, evento.NumeroOS);
+        Assert.Equal(DateTimeKind.Utc, evento.OcorridoEm.Kind);
     }
 
     // ────── AvancarStatusAsync ──────

@@ -1,0 +1,77 @@
+# RabbitMQ de desenvolvimento para o overlay local/kind (CD com kind e testes manuais).
+# Uma réplica, sem volume persistente: mensagens se perdem se o pod reiniciar.
+# No EKS, o broker sobe pelo RabbitMQ Cluster Operator, com volume EBS (Etapa 4 / spike S4).
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: oficina
+  labels:
+    app: rabbitmq
+    app.kubernetes.io/part-of: oficina-mecanica
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+    - name: management
+      port: 15672
+      targetPort: 15672
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  namespace: oficina
+  labels:
+    app: rabbitmq
+    app.kubernetes.io/part-of: oficina-mecanica
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:4.1-management
+          ports:
+            - name: amqp
+              containerPort: 5672
+            - name: management
+              containerPort: 15672
+          env:
+            - name: RABBITMQ_DEFAULT_VHOST
+              value: "oficina"
+            - name: RABBITMQ_DEFAULT_USER
+              value: "oficina"
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: api-secrets
+                  key: RabbitMq__Password
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "status"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 15

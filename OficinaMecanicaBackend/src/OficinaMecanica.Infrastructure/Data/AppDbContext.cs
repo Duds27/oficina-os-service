@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using OficinaMecanica.Domain.Entities;
 
@@ -19,6 +20,12 @@ public class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Tabelas do MassTransit: inbox (mensagens já consumidas) e outbox (mensagens a
+        // publicar), gravadas na mesma transação das mudanças de negócio.
+        modelBuilder.AddInboxStateEntity();
+        modelBuilder.AddOutboxMessageEntity();
+        modelBuilder.AddOutboxStateEntity();
 
         modelBuilder.Entity<Cliente>(e =>
         {

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Oficina.Contracts;
 using OficinaMecanica.Application.Abstractions;
 using OficinaMecanica.Application.Common;
 using OficinaMecanica.Application.DTOs.OrdensServico;
@@ -18,6 +19,7 @@ public class OrdemServicoUseCases
     private readonly IUnitOfWork _uow;
     private readonly INotificadorStatus _notificador;
     private readonly EstoqueService _estoque;
+    private readonly IPublicadorEventos _publicador;
     private readonly ILogger<OrdemServicoUseCases> _logger;
 
     public OrdemServicoUseCases(
@@ -29,6 +31,7 @@ public class OrdemServicoUseCases
         IUnitOfWork uow,
         INotificadorStatus notificador,
         EstoqueService estoque,
+        IPublicadorEventos publicador,
         ILogger<OrdemServicoUseCases> logger)
     {
         _ordens = ordens;
@@ -39,6 +42,7 @@ public class OrdemServicoUseCases
         _uow = uow;
         _notificador = notificador;
         _estoque = estoque;
+        _publicador = publicador;
         _logger = logger;
     }
 
@@ -118,7 +122,6 @@ public class OrdemServicoUseCases
 
         var ordem = new OrdemServico
         {
-            NumeroOS = await GerarNumeroOSAsync(),
             CorrelationId = Guid.NewGuid(),
             ClienteId = dto.ClienteId,
             VeiculoId = dto.VeiculoId,
@@ -129,17 +132,39 @@ public class OrdemServicoUseCases
             DataPrevisaoTermino = dto.DataPrevisaoTermino,
             DataCriacao = DateTime.UtcNow
         };
-
         await _ordens.AdicionarAsync(ordem);
-        try
+
+        // A OS e o evento que inicia a saga são gravados na mesma transação (outbox):
+        // ou os dois existem, ou nenhum. O evento precisa do Id da OS, então a OS é
+        // salva primeiro, dentro da transação.
+        const int maxTentativas = 2;
+        for (var tentativa = 1; ; tentativa++)
         {
-            await _uow.SalvarAsync();
-        }
-        catch (ConflitoPersistenciaException)
-        {
-            // Retry once on NumeroOS unique constraint collision (race condition)
+            await using var tx = await _uow.IniciarTransacaoAsync();
             ordem.NumeroOS = await GerarNumeroOSAsync();
+            try
+            {
+                await _uow.SalvarAsync();
+            }
+            catch (ConflitoPersistenciaException) when (tentativa < maxTentativas)
+            {
+                // Outra OS pegou o mesmo NumeroOS (condição de corrida). Desfaz e tenta de
+                // novo numa transação nova, que já enxerga o número que a outra gravou.
+                await tx.RollbackAsync();
+                continue;
+            }
+
+            await _publicador.PublicarAsync(new OrdemServicoAberta
+            {
+                CorrelationId = ordem.CorrelationId,
+                OsId = ordem.Id,
+                NumeroOS = ordem.NumeroOS,
+                OcorridoEm = ordem.DataCriacao
+            });
             await _uow.SalvarAsync();
+
+            await tx.CommitAsync();
+            break;
         }
 
         // Evento de negócio estruturado (base dos dashboards de observabilidade:

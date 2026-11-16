@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using MassTransit.Testing;
+using Oficina.Contracts;
 using OficinaMecanica.Domain.Enums;
 using OficinaMecanicaBackend.Tests.Infrastructure;
 
@@ -10,10 +12,12 @@ namespace OficinaMecanicaBackend.Tests.Integration;
 public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private readonly ITestHarness _harness;
 
     public OrdensServicoControllerTests(CustomWebApplicationFactory factory)
     {
         _client = factory.CreateClient();
+        _harness = factory.Services.GetTestHarness();
     }
 
     private async Task AuthorizeAsync()
@@ -267,7 +271,24 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
         Assert.True(payload!.OrdensConsideradas >= 1);
     }
 
+    [Fact]
+    public async Task CriarOS_PublicaOrdemServicoAbertaPeloOutbox()
+    {
+        await AuthorizeAsync();
+        var (cId, vId, _, _) = await SeedBaseAsync();
+
+        var osResp = await _client.PostAsJsonAsync("/api/ordens-servico",
+            new { ClienteId = cId, VeiculoId = vId });
+        Assert.Equal(HttpStatusCode.Created, osResp.StatusCode);
+        var os = await osResp.Content.ReadFromJsonAsync<OrdemServicoNumeroResult>();
+
+        // O evento sai do OutboxMessage (MySQL) depois do commit e chega ao bus.
+        Assert.True(await _harness.Published.Any<OrdemServicoAberta>(
+            m => m.Context.Message.OsId == os!.Id && m.Context.Message.NumeroOS == os.NumeroOS));
+    }
+
     // ── DTOs para deserialização ──
+    private record OrdemServicoNumeroResult(int Id, string NumeroOS);
     private record IdResult(int Id);
     private record OrdemServicoStatusResult(int Id, StatusOrdemServico Status);
     private record TempoMedioExecucaoResult(

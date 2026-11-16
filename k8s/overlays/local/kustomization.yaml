@@ -10,3 +10,4 @@ resources:
   - 10-configmap.yaml
   - 11-secret.yaml
   - 20-mysql.yaml
+  - 25-rabbitmq.yaml

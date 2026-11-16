@@ -16,3 +16,7 @@ data:
   Jwt__ExpiresInMinutes: "60"
   # Configuração do banco (host = nome do Service do MySQL)
   MYSQL_DATABASE: "OficinaMecanica"
+  # RabbitMQ (host = nome do Service do RabbitMQ; a senha fica no Secret)
+  RabbitMq__Host: "rabbitmq"
+  RabbitMq__VirtualHost: "oficina"
+  RabbitMq__Username: "oficina"
