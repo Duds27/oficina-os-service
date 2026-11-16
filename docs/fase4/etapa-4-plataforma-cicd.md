@@ -126,6 +126,7 @@ jobs:
 - [ ] Em cada repo de serviço, para mudanças em `infra/**`:
   - **PR:** `terraform fmt -check`, `validate` e `plan`, com o plano comentado no PR.
   - **Push na `main`:** `apply` com aprovação manual (Environment com *required reviewers*).
+- [ ] Primeiro `apply` do `infra/` do `execution-service` (tabela, role IRSA e ECR), que já tem `fmt`, `validate` e `terraform test` no CI. Veio da [Etapa 2](etapa-2-execution-service.md#pronto-quando).
 
 ### 4.7 Proteção dos repositórios
 
@@ -166,3 +167,4 @@ jobs:
 - [ ] Um merge em `homolog` de qualquer serviço builda, testa, publica a imagem e faz o rollout no EKS sem passo manual.
 - [ ] Os 3 serviços + RabbitMQ rodam no EKS, acessíveis pelo API Gateway com JWT. O webhook é acessível sem JWT.
 - [ ] O `docker-compose.full.yml` sobe o sistema inteiro numa máquina limpa.
+- [ ] O Terraform do `execution-service` aplica sem erro, e o pod acessa a tabela via IRSA, sem chaves de acesso. Veio da [Etapa 2](etapa-2-execution-service.md#pronto-quando).
