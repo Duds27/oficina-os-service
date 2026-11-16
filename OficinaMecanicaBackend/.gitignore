@@ -99,3 +99,6 @@ node_modules/
 
 TestResults/
 .sonarqube/
+
+# Code-behind gerado pelo Reqnroll a cada build
+*.feature.cs

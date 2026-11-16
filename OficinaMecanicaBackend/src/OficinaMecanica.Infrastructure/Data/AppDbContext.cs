@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using OficinaMecanica.Domain.Entities;
 
@@ -14,10 +15,20 @@ public class AppDbContext : DbContext
     public DbSet<OrdemServico> OrdensServico => Set<OrdemServico>();
     public DbSet<ItemOrdemServico> ItensOrdemServico => Set<ItemOrdemServico>();
     public DbSet<NotificacaoOutbox> NotificacoesOutbox => Set<NotificacaoOutbox>();
+    public DbSet<HistoricoStatusOS> HistoricoStatus => Set<HistoricoStatusOS>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Tabelas do MassTransit: inbox (mensagens já consumidas) e outbox (mensagens a
+        // publicar), gravadas na mesma transação das mudanças de negócio.
+        modelBuilder.AddInboxStateEntity();
+        modelBuilder.AddOutboxMessageEntity();
+        modelBuilder.AddOutboxStateEntity();
+
+        // Estado da saga da OS, na mesma transação da OS e do outbox.
+        new OrdemServicoSagaStateMap().Configure(modelBuilder);
 
         modelBuilder.Entity<Cliente>(e =>
         {
@@ -63,7 +74,11 @@ public class AppDbContext : DbContext
             e.Property(o => o.NumeroOS).HasMaxLength(50).IsRequired();
             e.Property(o => o.ValorTotal).HasPrecision(18, 2);
             e.Property(o => o.Status).HasConversion<int>();
+            e.Ignore(o => o.Encerrada);
+            e.Ignore(o => o.PermiteAlterarItens);
+            e.Ignore(o => o.VisivelNaListagem);
             e.HasIndex(o => o.NumeroOS).IsUnique().HasDatabaseName("IX_OrdenServico_NumeroOS");
+            e.HasIndex(o => o.CorrelationId).IsUnique().HasDatabaseName("IX_OrdenServico_CorrelationId");
             e.HasOne(o => o.Cliente)
              .WithMany(c => c.OrdensServico)
              .HasForeignKey(o => o.ClienteId)
@@ -106,6 +121,20 @@ public class AppDbContext : DbContext
             e.Property(n => n.StatusAnterior).HasConversion<int>();
             e.Property(n => n.StatusNovo).HasConversion<int>();
             e.HasIndex(n => n.OrdemServicoId).HasDatabaseName("IX_Notificacao_OrdemServico");
+        });
+
+        modelBuilder.Entity<HistoricoStatusOS>(e =>
+        {
+            e.ToTable("HistoricoStatusOS");
+            e.Property(h => h.StatusAnterior).HasConversion<int>();
+            e.Property(h => h.StatusNovo).HasConversion<int>();
+            e.Property(h => h.Origem).HasConversion<int>();
+            e.Property(h => h.Motivo).HasMaxLength(500);
+            e.HasIndex(h => h.OrdemServicoId).HasDatabaseName("IX_HistoricoStatus_OrdemServico");
+            e.HasOne(h => h.OrdemServico)
+             .WithMany(o => o.Historico)
+             .HasForeignKey(h => h.OrdemServicoId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

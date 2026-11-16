@@ -19,9 +19,9 @@ public class OrdensServicoController : ControllerBase
 
     /// <summary>
     /// Lista as ordens de serviço ativas, ordenadas por prioridade de status
-    /// (Em Execução → Aguardando Aprovação → Em Diagnóstico → Recebida) e, dentro
-    /// do mesmo status, das mais antigas para as mais recentes. OS finalizadas e
-    /// entregues são omitidas, exceto quando <paramref name="incluirConcluidas"/> = true.
+    /// (Em Execução → Aguardando Pagamento → Aguardando Aprovação → Em Diagnóstico → Recebida)
+    /// e, dentro do mesmo status, das mais antigas para as mais recentes. OS finalizadas,
+    /// entregues e canceladas são omitidas, exceto quando <paramref name="incluirConcluidas"/> = true.
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] bool incluirConcluidas = false)
@@ -78,10 +78,17 @@ public class OrdensServicoController : ControllerBase
         };
     }
 
-    [HttpPut("{id:int}/status")]
-    public async Task<IActionResult> AdvanceStatus(int id, [FromBody] UpdateStatusDto dto)
+    /// <summary>
+    /// Entrega a OS ao cliente (Finalizada → Entregue). As outras mudanças de status são
+    /// feitas pela saga, em resposta aos eventos do execution-service e do billing-service.
+    /// </summary>
+    [HttpPost("{id:int}/entregar")]
+    [ProducesResponseType(typeof(OrdemServicoDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Entregar(int id)
     {
-        var result = await _useCases.AvancarStatusAsync(id, dto);
+        var result = await _useCases.EntregarAsync(id);
         return result.StatusCode switch
         {
             400 => BadRequest(new { error = result.Error }),
@@ -90,16 +97,58 @@ public class OrdensServicoController : ControllerBase
         };
     }
 
-    [HttpPut("{id:int}/aprovar-orcamento")]
-    [AllowAnonymous]
-    public async Task<IActionResult> AprovarOrcamento(int id, [FromBody] AprovarOrcamentoDto dto)
+    /// <summary>
+    /// Histórico de status da OS, do mais antigo para o mais recente, com a origem de cada
+    /// mudança (Usuario ou Saga) e o motivo.
+    /// </summary>
+    [HttpGet("{id:int}/historico")]
+    [ProducesResponseType(typeof(IEnumerable<HistoricoStatusDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetHistorico(int id)
     {
-        var result = await _useCases.AprovarOrcamentoAsync(id, dto);
+        var result = await _useCases.ListarHistoricoAsync(id);
         return result.StatusCode switch
         {
-            400 => BadRequest(new { error = result.Error }),
             404 => NotFound(new { error = result.Error }),
             _   => Ok(result.Data)
+        };
+    }
+
+    /// <summary>
+    /// Estado atual da saga da OS: etapa, prazo, ids do orçamento e do pagamento e motivo do
+    /// cancelamento. Endpoint administrativo, para suporte e demonstração.
+    /// </summary>
+    [HttpGet("{id:int}/saga")]
+    [ProducesResponseType(typeof(SagaOrdemServicoDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetSaga(int id, [FromServices] SagaOrdemServicoUseCases sagas)
+    {
+        var result = await sagas.ObterAsync(id);
+        return result.StatusCode switch
+        {
+            404 => NotFound(new { error = result.Error }),
+            _   => Ok(result.Data)
+        };
+    }
+
+    /// <summary>
+    /// Pede o cancelamento da OS. Responde 202: a saga aplica a compensação do estado atual
+    /// (devolve peças, cancela orçamento e execução, estorna o pagamento se já foi pago).
+    /// OS em execução ou já encerrada não pode ser cancelada (409).
+    /// </summary>
+    [HttpPost("{id:int}/cancelar")]
+    [ProducesResponseType(typeof(CancelamentoSolicitadoDto), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Cancelar(int id, [FromBody] CancelarOrdemServicoDto? dto)
+    {
+        var solicitadoPor = User.Identity?.Name ?? "usuario-autenticado";
+        var result = await _useCases.CancelarAsync(id, dto?.Motivo, solicitadoPor);
+        return result.StatusCode switch
+        {
+            404 => NotFound(new { error = result.Error }),
+            409 => Conflict(new { error = result.Error }),
+            _   => AcceptedAtAction(nameof(GetSaga), new { id }, result.Data)
         };
     }
 

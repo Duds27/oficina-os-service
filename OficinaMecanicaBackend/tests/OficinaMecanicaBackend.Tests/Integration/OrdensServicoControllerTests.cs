@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using MassTransit.Testing;
+using Oficina.Contracts;
 using OficinaMecanica.Domain.Enums;
 using OficinaMecanicaBackend.Tests.Infrastructure;
 
@@ -9,11 +11,15 @@ namespace OficinaMecanicaBackend.Tests.Integration;
 [Collection("Integration")]
 public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFactory>
 {
+    private readonly CustomWebApplicationFactory _factory;
     private readonly HttpClient _client;
+    private readonly ITestHarness _harness;
 
     public OrdensServicoControllerTests(CustomWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
+        _harness = factory.Services.GetTestHarness();
     }
 
     private async Task AuthorizeAsync()
@@ -83,7 +89,7 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
     }
 
     [Fact]
-    public async Task TransicaoIlegal_Returns400()
+    public async Task Entregar_OsNaoFinalizada_Returns400()
     {
         await AuthorizeAsync();
         var (cId, vId, _, _) = await SeedBaseAsync();
@@ -92,45 +98,94 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
             new { ClienteId = cId, VeiculoId = vId });
         var os = await osResp.Content.ReadFromJsonAsync<IdResult>();
 
-        // Recebida → EmExecucao deve falhar
-        var response = await _client.PutAsJsonAsync($"/api/ordens-servico/{os!.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.EmExecucao });
+        var response = await _client.PostAsync($"/api/ordens-servico/{os!.Id}/entregar", null);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
-    public async Task FluxoCompleto_AteEmExecucao_ComAprovacaoSemToken()
+    public async Task FluxoCompleto_PelaSaga_AteEntregue()
+    {
+        var os = await CenarioSaga.CriarOsAsync(_client, _factory.Services, comPeca: true);
+        await CenarioSaga.LevarAteAsync(_harness, _factory.Services, os, "Concluida");
+
+        // Só a entrega é feita pelo atendente.
+        var entregar = await _client.PostAsync($"/api/ordens-servico/{os.Id}/entregar", null);
+        Assert.Equal(HttpStatusCode.OK, entregar.StatusCode);
+        Assert.Equal(StatusOrdemServico.Entregue, (await entregar.Content.ReadFromJsonAsync<OrdemServicoStatusResult>())!.Status);
+
+        var historico = (await _client.GetFromJsonAsync<List<HistoricoResult>>($"/api/ordens-servico/{os.Id}/historico"))!;
+        Assert.Equal(
+            ["EmDiagnostico", "AguardandoAprovacao", "AguardandoPagamento", "EmExecucao", "Finalizada", "Entregue"],
+            historico.Select(h => h.StatusNovo));
+        Assert.All(historico.SkipLast(1), h => Assert.Equal("Saga", h.Origem));
+        Assert.Equal("Usuario", historico[^1].Origem);
+
+        var saga = await _client.GetFromJsonAsync<SagaResult>($"/api/ordens-servico/{os.Id}/saga");
+        Assert.Equal("Concluida", saga!.Estado);
+        Assert.Equal(os.CorrelationId, saga.CorrelationId);
+
+        // O cliente acompanha sem token.
+        _client.DefaultRequestHeaders.Authorization = null;
+        var publico = await _client.GetFromJsonAsync<StatusPublicoResult>($"/api/ordens-servico/{os.Id}/status");
+        Assert.Equal("Entregue", publico!.StatusDescricao);
+    }
+
+    [Fact]
+    public async Task Cancelar_Returns202ESagaCancelaAOs()
+    {
+        var os = await CenarioSaga.CriarOsAsync(_client, _factory.Services, comPeca: true);
+        await CenarioSaga.EsperarSagaAsync(_factory.Services, os.CorrelationId, "AguardandoDiagnostico");
+
+        var resp = await _client.PostAsJsonAsync($"/api/ordens-servico/{os.Id}/cancelar", new { Motivo = "Cliente desistiu" });
+
+        Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+        Assert.EndsWith($"/api/ordens-servico/{os.Id}/saga", resp.Headers.Location!.ToString());
+        var saga = await CenarioSaga.EsperarSagaAsync(_factory.Services, os.CorrelationId, "Cancelada");
+        Assert.Contains("admin", saga.MotivoCancelamento);
+        Assert.Contains("Cliente desistiu", saga.MotivoCancelamento);
+
+        var ordem = await _client.GetFromJsonAsync<OrdemServicoStatusResult>($"/api/ordens-servico/{os.Id}");
+        Assert.Equal(StatusOrdemServico.Cancelada, ordem!.Status);
+        var lista = await _client.GetFromJsonAsync<List<OrdemServicoStatusResult>>("/api/ordens-servico");
+        Assert.DoesNotContain(lista!, o => o.Id == os.Id);
+    }
+
+    [Fact]
+    public async Task Cancelar_OsEmExecucao_Returns409()
+    {
+        var os = await CenarioSaga.CriarOsAsync(_client, _factory.Services);
+        await CenarioSaga.LevarAteAsync(_harness, _factory.Services, os, "EmExecucao");
+
+        var resp = await _client.PostAsJsonAsync($"/api/ordens-servico/{os.Id}/cancelar", new { Motivo = "tarde" });
+
+        Assert.Equal(HttpStatusCode.Conflict, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetSaga_OsInexistente_Returns404()
+    {
+        await AuthorizeAsync();
+
+        var resp = await _client.GetAsync("/api/ordens-servico/999999/saga");
+
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task RotasDaFase3_DeAprovacaoEStatusManual_ForamRemovidas()
     {
         await AuthorizeAsync();
         var (cId, vId, _, _) = await SeedBaseAsync();
+        var os = await (await _client.PostAsJsonAsync("/api/ordens-servico",
+            new { ClienteId = cId, VeiculoId = vId })).Content.ReadFromJsonAsync<IdResult>();
 
-        // Cria OS
-        var osResp = await _client.PostAsJsonAsync("/api/ordens-servico",
-            new { ClienteId = cId, VeiculoId = vId });
-        var os = await osResp.Content.ReadFromJsonAsync<IdResult>();
+        // A aprovação passou para o billing-service, e as transições para a saga.
+        var aprovar = await _client.PutAsJsonAsync($"/api/ordens-servico/{os!.Id}/aprovar-orcamento", new { Aprovado = true });
+        var status = await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status", new { NovoStatus = 1 });
 
-        // Recebida → EmDiagnostico
-        await _client.PutAsJsonAsync($"/api/ordens-servico/{os!.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.EmDiagnostico });
-
-        // EmDiagnostico → AguardandoAprovacao
-        await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.AguardandoAprovacao });
-
-        // Cliente aprova o orçamento (sem JWT)
-        _client.DefaultRequestHeaders.Authorization = null;
-        var aprovarResp = await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/aprovar-orcamento",
-            new { Aprovado = true });
-        Assert.Equal(HttpStatusCode.OK, aprovarResp.StatusCode);
-
-        // Volta com token
-        await AuthorizeAsync();
-
-        // AguardandoAprovacao → EmExecucao (com orçamento aprovado)
-        var execResp = await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.EmExecucao });
-        Assert.Equal(HttpStatusCode.OK, execResp.StatusCode);
+        Assert.Contains(aprovar.StatusCode, new[] { HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed });
+        Assert.Contains(status.StatusCode, new[] { HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed });
     }
 
     [Fact]
@@ -185,24 +240,8 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
     [Fact]
     public async Task Listagem_ExcluiFinalizadasEEntregues()
     {
-        await AuthorizeAsync();
-        var (cId, vId, _, _) = await SeedBaseAsync();
-
-        // Cria OS e leva até Finalizada
-        var osResp = await _client.PostAsJsonAsync("/api/ordens-servico",
-            new { ClienteId = cId, VeiculoId = vId });
-        var os = await osResp.Content.ReadFromJsonAsync<IdResult>();
-
-        await _client.PutAsJsonAsync($"/api/ordens-servico/{os!.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.EmDiagnostico });
-        await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.AguardandoAprovacao });
-        await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/aprovar-orcamento",
-            new { Aprovado = true });
-        await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.EmExecucao });
-        await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.Finalizada });
+        var os = await CenarioSaga.CriarOsAsync(_client, _factory.Services);
+        await CenarioSaga.LevarAteAsync(_harness, _factory.Services, os, "Concluida");
 
         // Listagem padrão não deve conter a OS finalizada
         var lista = await _client.GetFromJsonAsync<List<OrdemServicoStatusResult>>("/api/ordens-servico");
@@ -211,7 +250,7 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
         // Com incluirConcluidas=true ela reaparece
         var listaCompleta = await _client.GetFromJsonAsync<List<OrdemServicoStatusResult>>(
             "/api/ordens-servico?incluirConcluidas=true");
-        Assert.Contains(listaCompleta!, o => o.Id == os.Id);
+        Assert.Contains(listaCompleta!, o => o.Id == os.Id && o.Status == StatusOrdemServico.Finalizada);
     }
 
     [Fact]
@@ -232,25 +271,9 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
     [Fact]
     public async Task TempoMedioExecucao_ComOSFinalizada_ContabilizaOrdem()
     {
-        await AuthorizeAsync();
-        var (cId, vId, _, _) = await SeedBaseAsync();
-
-        // Cria e leva a OS até Finalizada, passando por EmExecucao
-        var osResp = await _client.PostAsJsonAsync("/api/ordens-servico",
-            new { ClienteId = cId, VeiculoId = vId });
-        var os = await osResp.Content.ReadFromJsonAsync<IdResult>();
-
-        await _client.PutAsJsonAsync($"/api/ordens-servico/{os!.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.EmDiagnostico });
-        await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.AguardandoAprovacao });
-        await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/aprovar-orcamento",
-            new { Aprovado = true });
-        await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.EmExecucao });
-        var finalizarResp = await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
-            new { NovoStatus = (int)StatusOrdemServico.Finalizada });
-        Assert.Equal(HttpStatusCode.OK, finalizarResp.StatusCode);
+        // A saga grava o início (ExecucaoIniciada) e o fim (ExecucaoFinalizada) da execução.
+        var os = await CenarioSaga.CriarOsAsync(_client, _factory.Services);
+        await CenarioSaga.LevarAteAsync(_harness, _factory.Services, os, "Concluida");
 
         var payload = await _client.GetFromJsonAsync<TempoMedioExecucaoResult>(
             "/api/ordens-servico/tempo-medio-execucao");
@@ -259,7 +282,23 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
         Assert.True(payload!.OrdensConsideradas >= 1);
     }
 
+    [Fact]
+    public async Task CriarOS_PublicaOrdemServicoAbertaPeloOutbox()
+    {
+        await AuthorizeAsync();
+        var (cId, vId, _, _) = await SeedBaseAsync();
+
+        var osResp = await _client.PostAsJsonAsync("/api/ordens-servico",
+            new { ClienteId = cId, VeiculoId = vId });
+        Assert.Equal(HttpStatusCode.Created, osResp.StatusCode);
+        var os = await osResp.Content.ReadFromJsonAsync<OrdemServicoNumeroResult>();
+
+        // O evento sai do OutboxMessage (MySQL) depois do commit e chega ao bus.
+        await _harness.EsperarPublicadaAsync<OrdemServicoAberta>(m => m.OsId == os!.Id && m.NumeroOS == os.NumeroOS);
+    }
+
     // ── DTOs para deserialização ──
+    private record OrdemServicoNumeroResult(int Id, string NumeroOS);
     private record IdResult(int Id);
     private record OrdemServicoStatusResult(int Id, StatusOrdemServico Status);
     private record TempoMedioExecucaoResult(
@@ -272,4 +311,7 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
     private record PecaResult(int Id, int QuantidadeEstoque);
     private record ItemResult(int Id);
     private record OrdemServicoResult(int Id, IEnumerable<ItemResult> Itens);
+    private record HistoricoResult(string StatusAnterior, string StatusNovo, string Origem, string? Motivo, DateTime OcorridoEm);
+    private record SagaResult(Guid CorrelationId, string Estado, DateTime? PrazoExpiraEm);
+    private record StatusPublicoResult(string NumeroOS, string StatusDescricao);
 }

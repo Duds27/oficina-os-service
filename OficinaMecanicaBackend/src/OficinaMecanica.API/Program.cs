@@ -7,10 +7,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using OficinaMecanica.API.Middleware;
+using OficinaMecanica.API.Security;
 using OficinaMecanica.Application;
 using OficinaMecanica.Application.Validators;
 using OficinaMecanica.Infrastructure;
 using OficinaMecanica.Infrastructure.Data;
+using OficinaMecanica.Infrastructure.Messaging;
 using Serilog;
 using Serilog.Formatting.Compact;
 
@@ -39,6 +41,10 @@ try
     // Clean Architecture: composição das camadas
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(connectionString);
+    // RabbitMQ + MassTransit (outbox/inbox no MySQL). O health check do bus entra no /health/ready.
+    builder.Services.AddMensageria(builder.Configuration);
+    // Chave dos endpoints internos (/internal/*), chamados pela Lambda de autenticação.
+    builder.Services.Configure<InternalApiOptions>(builder.Configuration.GetSection(InternalApiOptions.Secao));
 
     // JWT Authentication
     var jwtKey = builder.Configuration["Jwt:Key"]
@@ -161,7 +167,7 @@ try
     // Liveness: processo de pé (nenhum check dependente executa).
     app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false })
         .AllowAnonymous();
-    // Readiness: pronto para receber tráfego (banco acessível).
+    // Readiness: pronto para receber tráfego (banco e RabbitMQ acessíveis).
     app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") })
         .AllowAnonymous();
 

@@ -370,7 +370,12 @@ stateDiagram-v2
 | **C2** | Prazo de aprovação, pagamento recusado ou prazo de pagamento | `Send CancelarOrcamento` · devolver peças · `Send CancelarExecucao` · OS → `Cancelada` |
 | **C3** | Execução rejeitada ou prazo de execução | `Send EstornarPagamento` · devolver peças · OS → `Cancelada`. A saga espera `PagamentoEstornado` para fechar. |
 
-`CancelamentoSolicitado` (opcional) aplica a compensação do estado atual: C2 antes do pagamento e C3 depois. Antes do orçamento, só devolve as peças e manda `CancelarExecucao`.
+`CancelamentoSolicitado` aplica a compensação do estado atual:
+
+- **`AguardandoDiagnostico` e `EmDiagnostico`:** devolve as peças e manda `CancelarExecucao`.
+- **De `AguardandoOrcamento` a `AguardandoPagamento`:** C2. Em `AguardandoOrcamento` o `GerarOrcamento` já saiu, então o billing também recebe `CancelarOrcamento`; sem ele, o cliente poderia aprovar e pagar uma OS cancelada.
+- **`AguardandoExecucao`:** C3 + `CancelarExecucao`, e a saga espera o `PagamentoEstornado`.
+- **`EmExecucao`:** não é aceito. A API responde 409 e a saga ignora a mensagem, se ela chegar.
 
 **Status da OS em cada estado:**
 

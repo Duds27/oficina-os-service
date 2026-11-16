@@ -25,13 +25,14 @@ jobs:
       - name: Build
         run: dotnet build OficinaMecanicaBackend/OficinaMecanicaBackend.sln -c Release --no-restore
 
-      # Os testes de integração sobem um MySQL via Testcontainers; o runner
-      # ubuntu-latest já possui Docker disponível.
-      - name: Test (unitários + integração)
+      # Os testes de integração sobem MySQL e RabbitMQ via Testcontainers; o runner
+      # ubuntu-latest já possui Docker disponível. A cobertura usa as exclusões
+      # documentadas em coverlet.runsettings (Migrations, Program.cs, DTOs).
+      - name: Test (unitários + saga + integração + BDD)
         run: >
           dotnet test OficinaMecanicaBackend/OficinaMecanicaBackend.sln
           -c Release --no-build --verbosity normal
-          --collect:"XPlat Code Coverage"
+          --settings OficinaMecanicaBackend/coverlet.runsettings
 
       - name: Upload coverage
         if: always()

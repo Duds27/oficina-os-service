@@ -17,3 +17,15 @@ internal sealed class FakeNotificador : INotificadorStatus
         return Task.CompletedTask;
     }
 }
+
+/// <summary>Publicador de teste: guarda os eventos em memória, sem broker.</summary>
+internal sealed class FakePublicador : IPublicadorEventos
+{
+    public List<object> Publicados { get; } = [];
+
+    public Task PublicarAsync<T>(T evento, CancellationToken ct = default) where T : class
+    {
+        Publicados.Add(evento);
+        return Task.CompletedTask;
+    }
+}

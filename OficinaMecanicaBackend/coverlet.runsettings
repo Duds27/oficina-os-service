@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cobertura de código dos testes (coverlet). Uso:
+    dotnet test OficinaMecanicaBackend.sln - -settings coverlet.runsettings
+  Exclusões documentadas (docs/fase4/README.md, seção 8): código gerado (Migrations,
+  *.Designer.cs), Program.cs (composição) e DTOs (só dados). Os projetos de teste ficam de fora.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Include>[OficinaMecanica.*]*</Include>
+          <Exclude>[OficinaMecanica.BddTests]*</Exclude>
+          <ExcludeByFile>**/Migrations/*.cs,**/Program.cs,**/DTOs/**/*.cs</ExcludeByFile>
+          <!-- Sem CompilerGeneratedAttribute: o corpo dos métodos async fica numa classe gerada pelo compilador. -->
+          <ExcludeByAttribute>GeneratedCodeAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

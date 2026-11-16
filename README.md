@@ -398,6 +398,11 @@ Sobrescreva qualquer configuração via variáveis de ambiente usando `__` como 
 | `Jwt__Key`                             | `ChaveSecretaForteComMaisDe32Caracteres!`                        |
 | `Jwt__AdminUsername`                   | `admin`                                                          |
 | `Jwt__AdminPassword`                   | `SenhaForte@2026`                                                |
+| `RabbitMq__Host`                       | `rabbitmq` (também `RabbitMq__Port`, `__VirtualHost`, `__Username`) |
+| `RabbitMq__Password`                   | senha do usuário do serviço no vhost `oficina`                   |
+| `InternalApi__Key`                     | chave do header `X-Internal-Key` dos endpoints `/internal/*`     |
+| `Saga__Prazos__Aprovacao`              | `2.00:00:00` (48 h; na demonstração, `00:02:00`). Também `__Pagamento` e `__Execucao` |
+| `Saga__VerificadorPrazos__Intervalo`   | `00:00:30` (de quanto em quanto tempo os prazos vencidos são verificados) |
 
 ---
 
@@ -469,30 +474,190 @@ Sobrescreva qualquer configuração via variáveis de ambiente usando `__` como 
 
 ### Ordens de Serviço
 
-| Método | Rota                                         | Auth    | Descrição                                                                                          |
-| ------ | -------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------- |
-| GET    | `/api/ordens-servico`                        | Sim     | Lista OS ativas, ordenadas por prioridade (`?incluirConcluidas=true` inclui finalizadas/entregues) |
-| GET    | `/api/ordens-servico/tempo-medio-execucao`   | Sim     | Tempo médio de execução das OS                                                                     |
-| GET    | `/api/ordens-servico/{id}`                   | Sim     | Busca OS por ID                                                                                    |
-| POST   | `/api/ordens-servico`                        | Sim     | Cria OS (NumeroOS gerado automaticamente)                                                          |
-| PUT    | `/api/ordens-servico/{id}/status`            | Sim     | Avança status da OS                                                                                |
-| PUT    | `/api/ordens-servico/{id}/aprovar-orcamento` | **Não** | Cliente aprova/recusa orçamento                                                                    |
-| GET    | `/api/ordens-servico/{id}/status`            | **Não** | Status público da OS para o cliente                                                                |
-| POST   | `/api/ordens-servico/{id}/itens`             | Sim     | Adiciona serviço ou peça à OS                                                                      |
-| DELETE | `/api/ordens-servico/{id}/itens/{itemId}`    | Sim     | Remove item da OS                                                                                  |
+| Método | Rota                                       | Auth    | Descrição                                                                                                        |
+| ------ | ------------------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/ordens-servico`                      | Sim     | Lista OS ativas, ordenadas por prioridade (`?incluirConcluidas=true` inclui finalizadas, entregues e canceladas) |
+| GET    | `/api/ordens-servico/tempo-medio-execucao` | Sim     | Tempo médio de execução das OS                                                                                   |
+| GET    | `/api/ordens-servico/{id}`                 | Sim     | Busca OS por ID                                                                                                  |
+| POST   | `/api/ordens-servico`                      | Sim     | Cria OS (NumeroOS gerado automaticamente) e inicia a saga                                                        |
+| POST   | `/api/ordens-servico/{id}/entregar`        | Sim     | Entrega a OS ao cliente (Finalizada → Entregue)                                                                  |
+| POST   | `/api/ordens-servico/{id}/cancelar`        | Sim     | Pede o cancelamento (202). A saga aplica as compensações. 409 se a OS estiver em execução ou encerrada           |
+| GET    | `/api/ordens-servico/{id}/historico`       | Sim     | Histórico de status, com origem (`Usuario`/`Saga`) e motivo                                                      |
+| GET    | `/api/ordens-servico/{id}/saga`            | Sim     | Estado da saga: etapa, prazo, orçamento, pagamento e motivo do cancelamento (administrativo)                     |
+| GET    | `/api/ordens-servico/{id}/status`          | **Não** | Status público da OS para o cliente                                                                              |
+| POST   | `/api/ordens-servico/{id}/itens`           | Sim     | Adiciona serviço ou peça à OS (só em Recebida/Em Diagnóstico)                                                    |
+| DELETE | `/api/ordens-servico/{id}/itens/{itemId}`  | Sim     | Remove item da OS (só em Recebida/Em Diagnóstico)                                                                |
 
-> Os endpoints de aprovação de orçamento e consulta de status são públicos (sem JWT) para que o cliente possa acompanhar e aprovar remotamente.
+> **Fase 4:** a aprovação do orçamento saiu daqui e foi para o `billing-service`. O `PUT /{id}/status` genérico também saiu: as transições são feitas pela saga, em resposta aos eventos do `execution-service` e do `billing-service`. O atendente só registra a entrega.
 
-**Listagem ordenada:** `GET /api/ordens-servico` retorna as OS **ativas** ordenadas por prioridade de status (Em Execução → Aguardando Aprovação → Em Diagnóstico → Recebida) e, no mesmo status, das mais antigas para as mais recentes. OS **finalizadas** e **entregues** são omitidas (exclusão lógica); use `?incluirConcluidas=true` para incluí-las.
+**Listagem ordenada:** `GET /api/ordens-servico` retorna as OS **ativas** ordenadas por prioridade de status (Em Execução → Aguardando Pagamento → Aguardando Aprovação → Em Diagnóstico → Recebida) e, no mesmo status, das mais antigas para as mais recentes. OS **finalizadas**, **entregues** e **canceladas** são omitidas (exclusão lógica); use `?incluirConcluidas=true` para incluí-las.
 
-**Notificação por e-mail:** a cada avanço de status (`PUT /{id}/status`), a aplicação registra uma notificação na tabela `NotificacoesOutbox` e emite um log (envio de e-mail **simulado**).
+**Notificação por e-mail:** a cada transição de status (da saga ou da entrega), a aplicação registra uma notificação na tabela `NotificacoesOutbox` e emite um log (envio de e-mail **simulado**), na mesma transação da mudança.
+
+### Interno (Lambda de autenticação)
+
+| Método | Rota                                 | Auth               | Descrição                                                           |
+| ------ | ------------------------------------ | ------------------ | ------------------------------------------------------------------- |
+| GET    | `/internal/clientes/por-cpf/{cpf}`   | `X-Internal-Key`   | `{ id, nome, ativo }` do cliente pelo CPF/CNPJ (com ou sem máscara) |
+
+Não é roteado pelo API Gateway: só a Lambda chama, pela rede interna. A chave vem de `InternalApi__Key` (Secrets Manager em produção). Sem a chave configurada, o endpoint recusa tudo (401).
 
 ### Health checks
 
 | Método | Rota            | Auth    | Descrição                             |
 | ------ | --------------- | ------- | ------------------------------------- |
 | GET    | `/health/live`  | **Não** | Liveness — processo de pé.            |
-| GET    | `/health/ready` | **Não** | Readiness — banco de dados acessível. |
+| GET    | `/health/ready` | **Não** | Readiness — banco de dados e RabbitMQ acessíveis. |
+
+O endpoint `GET /api/ordens-servico/tempo-medio-execucao` retorna o tempo médio de execução das OS, medido do início da execução (`DataInicioExecucao`, gravada na transição para `EmExecucao`) até a finalização (`DataFinalizacao`). Apenas ordens que iniciaram a execução e foram finalizadas entram no cálculo. Resposta:
+
+```json
+{
+  "ordensConsideradas": 12,
+  "tempoMedioSegundos": 10800,
+  "tempoMedioMinutos": 180,
+  "tempoMedioHoras": 3,
+  "tempoMedioFormatado": "03:00:00"
+}
+```
+
+---
+
+## Fluxo de Status da OS
+
+Na Fase 4, o status muda pela **saga orquestrada** do `os-service`, em resposta aos eventos do `execution-service` e do `billing-service` (RabbitMQ + MassTransit). Estados, compensações e regras de eventos fora de ordem: [`docs/contratos-mensagens.md`](docs/contratos-mensagens.md#4-máquina-de-estados-da-saga-no-os-service).
+
+```
+Recebida ─────────────── DiagnosticoIniciado (execution)
+   │
+   ▼
+Em Diagnóstico ───────── DiagnosticoConcluido → GerarOrcamento (billing)
+   │
+   ▼
+Aguardando Aprovação ─── OrcamentoAprovado (billing; cliente aprova no billing)
+   │
+   ▼
+Aguardando Pagamento ─── PagamentoConfirmado (Mercado Pago) → IniciarExecucao
+   │
+   ▼
+Em Execução ──────────── ExecucaoIniciada (execution)
+   │
+   ▼
+Finalizada ───────────── ExecucaoFinalizada (execution)
+   │
+   ▼
+Entregue ─────────────── POST /entregar (atendente)
+
+Cancelada ◄── orçamento recusado, pagamento recusado, execução rejeitada,
+              prazo vencido ou POST /cancelar (com as compensações)
+```
+
+- O domínio só aceita o próximo passo do fluxo ou `Cancelada` (a partir de um status não encerrado). Entregar uma OS que não está finalizada retorna **400**.
+- Toda transição grava um registro em `HistoricoStatusOS` (origem `Usuario` ou `Saga`, motivo e `CorrelationId`), consultável em `GET /{id}/historico`.
+- A data do marco é registrada na transição: `DataAprovacaoOrcamento` (Aguardando Pagamento), `DataInicioExecucao` (Em Execução), `DataFinalizacao` (Finalizada) e `DataEntrega` (Entregue). As duas do meio alimentam o tempo médio de execução.
+
+---
+
+## Autenticação
+
+| Método | Rota              | Auth | Descrição      |
+| ------ | ----------------- | ---- | -------------- |
+| POST   | `/api/auth/login` | Não  | Gera token JWT |
+
+**Payload de login:**
+
+```json
+{ "username": "admin", "password": "Admin@123" }
+```
+
+---
+
+### Clientes
+
+| Método | Rota                 | Auth | Descrição                           |
+| ------ | -------------------- | ---- | ----------------------------------- |
+| GET    | `/api/clientes`      | Sim  | Lista todos os clientes             |
+| GET    | `/api/clientes/{id}` | Sim  | Busca cliente por ID                |
+| POST   | `/api/clientes`      | Sim  | Cria cliente (CPF ou CNPJ validado) |
+| PUT    | `/api/clientes/{id}` | Sim  | Atualiza dados do cliente           |
+| DELETE | `/api/clientes/{id}` | Sim  | Remove cliente (409 se possuir OS)  |
+
+---
+
+### Veículos
+
+| Método | Rota                                | Auth | Descrição                     |
+| ------ | ----------------------------------- | ---- | ----------------------------- |
+| GET    | `/api/veiculos`                     | Sim  | Lista todos os veículos       |
+| GET    | `/api/veiculos/{id}`                | Sim  | Busca veículo por ID          |
+| GET    | `/api/veiculos/cliente/{clienteId}` | Sim  | Veículos de um cliente        |
+| POST   | `/api/veiculos`                     | Sim  | Cria veículo (placa validada) |
+| PUT    | `/api/veiculos/{id}`                | Sim  | Atualiza dados do veículo     |
+| DELETE | `/api/veiculos/{id}`                | Sim  | Remove veículo                |
+
+---
+
+### Peças
+
+| Método | Rota                       | Auth | Descrição                      |
+| ------ | -------------------------- | ---- | ------------------------------ |
+| GET    | `/api/pecas`               | Sim  | Lista todas as peças           |
+| GET    | `/api/pecas/{id}`          | Sim  | Busca peça por ID              |
+| GET    | `/api/pecas/estoque-baixo` | Sim  | Peças abaixo do estoque mínimo |
+| POST   | `/api/pecas`               | Sim  | Cadastra peça                  |
+| PUT    | `/api/pecas/{id}`          | Sim  | Atualiza peça                  |
+| DELETE | `/api/pecas/{id}`          | Sim  | Remove peça                    |
+
+---
+
+### Serviços
+
+| Método | Rota                 | Auth | Descrição               |
+| ------ | -------------------- | ---- | ----------------------- |
+| GET    | `/api/servicos`      | Sim  | Lista todos os serviços |
+| GET    | `/api/servicos/{id}` | Sim  | Busca serviço por ID    |
+| POST   | `/api/servicos`      | Sim  | Cadastra serviço        |
+| PUT    | `/api/servicos/{id}` | Sim  | Atualiza serviço        |
+| DELETE | `/api/servicos/{id}` | Sim  | Remove serviço          |
+
+---
+
+### Ordens de Serviço
+
+| Método | Rota                                       | Auth    | Descrição                                                                                                        |
+| ------ | ------------------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/ordens-servico`                      | Sim     | Lista OS ativas, ordenadas por prioridade (`?incluirConcluidas=true` inclui finalizadas, entregues e canceladas) |
+| GET    | `/api/ordens-servico/tempo-medio-execucao` | Sim     | Tempo médio de execução das OS                                                                                   |
+| GET    | `/api/ordens-servico/{id}`                 | Sim     | Busca OS por ID                                                                                                  |
+| POST   | `/api/ordens-servico`                      | Sim     | Cria OS (NumeroOS gerado automaticamente) e inicia a saga                                                        |
+| POST   | `/api/ordens-servico/{id}/entregar`        | Sim     | Entrega a OS ao cliente (Finalizada → Entregue)                                                                  |
+| POST   | `/api/ordens-servico/{id}/cancelar`        | Sim     | Pede o cancelamento (202). A saga aplica as compensações. 409 se a OS estiver em execução ou encerrada           |
+| GET    | `/api/ordens-servico/{id}/historico`       | Sim     | Histórico de status, com origem (`Usuario`/`Saga`) e motivo                                                      |
+| GET    | `/api/ordens-servico/{id}/saga`            | Sim     | Estado da saga: etapa, prazo, orçamento, pagamento e motivo do cancelamento (administrativo)                     |
+| GET    | `/api/ordens-servico/{id}/status`          | **Não** | Status público da OS para o cliente                                                                              |
+| POST   | `/api/ordens-servico/{id}/itens`           | Sim     | Adiciona serviço ou peça à OS (só em Recebida/Em Diagnóstico)                                                    |
+| DELETE | `/api/ordens-servico/{id}/itens/{itemId}`  | Sim     | Remove item da OS (só em Recebida/Em Diagnóstico)                                                                |
+
+> **Fase 4:** a aprovação do orçamento saiu daqui e foi para o `billing-service`. O `PUT /{id}/status` genérico também saiu: as transições são feitas pela saga, em resposta aos eventos do `execution-service` e do `billing-service`. O atendente só registra a entrega.
+
+**Listagem ordenada:** `GET /api/ordens-servico` retorna as OS **ativas** ordenadas por prioridade de status (Em Execução → Aguardando Pagamento → Aguardando Aprovação → Em Diagnóstico → Recebida) e, no mesmo status, das mais antigas para as mais recentes. OS **finalizadas**, **entregues** e **canceladas** são omitidas (exclusão lógica); use `?incluirConcluidas=true` para incluí-las.
+
+**Notificação por e-mail:** a cada transição de status (da saga ou da entrega), a aplicação registra uma notificação na tabela `NotificacoesOutbox` e emite um log (envio de e-mail **simulado**), na mesma transação da mudança.
+
+### Interno (Lambda de autenticação)
+
+| Método | Rota                                 | Auth               | Descrição                                                           |
+| ------ | ------------------------------------ | ------------------ | ------------------------------------------------------------------- |
+| GET    | `/internal/clientes/por-cpf/{cpf}`   | `X-Internal-Key`   | `{ id, nome, ativo }` do cliente pelo CPF/CNPJ (com ou sem máscara) |
+
+Não é roteado pelo API Gateway: só a Lambda chama, pela rede interna. A chave vem de `InternalApi__Key` (Secrets Manager em produção). Sem a chave configurada, o endpoint recusa tudo (401).
+
+### Health checks
+
+| Método | Rota            | Auth    | Descrição                             |
+| ------ | --------------- | ------- | ------------------------------------- |
+| GET    | `/health/live`  | **Não** | Liveness — processo de pé.            |
+| GET    | `/health/ready` | **Não** | Readiness — banco de dados e RabbitMQ acessíveis. |
 
 O endpoint `GET /api/ordens-servico/tempo-medio-execucao` retorna o tempo médio de execução das OS, medido do início da execução (`DataInicioExecucao`, gravada na transição para `EmExecucao`) até a finalização (`DataFinalizacao`). Apenas ordens que iniciaram a execução e foram finalizadas entram no cálculo. Resposta:
 
@@ -575,25 +740,33 @@ cd OficinaMecanicaBackend
 dotnet test
 ```
 
-> **Docker é necessário para os testes de integração.** Eles sobem um contêiner MySQL 8.4 via Testcontainers; garanta que o Docker esteja em execução antes de rodar `dotnet test`. Os testes unitários (Validators/Services) não dependem de Docker.
+> **Docker é necessário para os testes de integração.** Eles sobem MySQL 8.4 e RabbitMQ 4.1 via Testcontainers; garanta que o Docker esteja em execução antes de rodar `dotnet test`. Os testes de domínio, de casos de uso, da saga e o BDD não dependem de Docker.
 
 ### Estrutura
 
-| Categoria                | Localização              | Descrição                                             |
-| ------------------------ | ------------------------ | ----------------------------------------------------- |
-| Unitários — Validators   | `tests/.../Validators/`  | CpfCnpjValidatorTests, PlacaValidatorTests            |
-| Unitários — Casos de uso | `tests/.../Services/`    | OrdemServicoUseCasesTests, PecaUseCasesTests          |
-| Integração               | `tests/.../Integration/` | ClientesControllerTests, OrdensServicoControllerTests |
+| Categoria                     | Localização                                    | Descrição                                                                                         |
+| ----------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Unitários — Domínio           | `tests/OficinaMecanicaBackend.Tests/Domain/`     | Transições de status, histórico, avanço fora de ordem, cancelamento                               |
+| Unitários — Validators        | `tests/OficinaMecanicaBackend.Tests/Validators/` | CPF/CNPJ, placa e regras de entrada dos cadastros                                                  |
+| Unitários — Casos de uso      | `tests/OficinaMecanicaBackend.Tests/Services/`   | OS (abertura, entrega, histórico, cancelamento), estoque, peças                                    |
+| Contratos de mensagens        | `tests/OficinaMecanicaBackend.Tests/Contracts/`  | URN, exchange e campos das 20 mensagens contra o catálogo de `docs/contratos-mensagens.md`         |
+| Saga (state machine)          | `tests/OficinaMecanicaBackend.Tests/Saga/`       | Cada transição, compensações C1/C2/C3, prazos, eventos fora de ordem e repetidos (test harness)    |
+| Integração                    | `tests/OficinaMecanicaBackend.Tests/Integration/`| API + MySQL real; saga com repositório EF; ponta a ponta com RabbitMQ real                         |
+| BDD                           | `tests/OficinaMecanica.BddTests/`                | Reqnroll: "Ciclo de vida da Ordem de Serviço coordenado por Saga" (5 cenários)                     |
 
-Os testes unitários de Services usam SQLite in-memory (rápidos, sem dependências externas). Já os testes de integração usam `WebApplicationFactory<Program>` sobre um **MySQL 8.4 real provisionado via Testcontainers**, exercitando o mesmo provider (Pomelo) e as mesmas migrations do ambiente de produção — em vez de um banco substituto. O JWT é reconfigurado com uma chave de teste nesses testes.
+- **Casos de uso:** SQLite in-memory (rápidos, sem dependências externas).
+- **Saga:** test harness do MassTransit, com transporte e repositório em memória e as operações na OS simuladas.
+- **Integração:** `WebApplicationFactory<Program>` sobre um **MySQL 8.4 real** (Testcontainers), com o mesmo provider (Pomelo) e as mesmas migrations de produção. O RabbitMQ é trocado pelo transporte em memória do test harness, mas a saga, o outbox e o inbox continuam no MySQL. `MensageriaRabbitMqTests` usa um **RabbitMQ 4.1 real**. O JWT é reconfigurado com uma chave de teste.
+- **BDD:** a saga, os casos de uso e os repositórios reais sobre SQLite, com o billing-service e o execution-service simulados por consumidores nas filas de comando.
 
 ### Cobertura
 
 ```bash
-dotnet test --collect:"XPlat Code Coverage"
+cd OficinaMecanicaBackend
+dotnet test --settings coverlet.runsettings
 ```
 
-O relatório é gerado em `tests/OficinaMecanicaBackend.Tests/TestResults/*/coverage.cobertura.xml`.
+Gera um `coverage.cobertura.xml` por projeto de teste em `tests/*/TestResults/`. Exclusões, configuradas em `coverlet.runsettings`: `Migrations/` (inclui os `*.Designer.cs`), `Program.cs` e `DTOs/`. Na Fase 4, a cobertura de linhas dos dois projetos juntos ficou em torno de 95%. O gate de 80% no CI entra na Etapa 4 (ReportGenerator + SonarCloud).
 
 ---
 

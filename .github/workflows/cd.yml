@@ -55,10 +55,11 @@ jobs:
           kubectl -n kube-system patch deployment metrics-server --type=json \
             -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
 
-      - name: Deploy (banco + API + HPA)
+      - name: Deploy (banco + RabbitMQ + API + HPA)
         run: |
           kubectl apply -k k8s/overlays/local
           kubectl -n oficina rollout status statefulset/mysql --timeout=180s
+          kubectl -n oficina rollout status deployment/rabbitmq --timeout=180s
           kubectl -n oficina rollout status deployment/api --timeout=180s
 
       - name: Verificar recursos

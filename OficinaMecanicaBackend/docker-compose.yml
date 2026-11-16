@@ -9,9 +9,39 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Server=db;Port=3306;Database=OficinaMecanica;User=root;Password=Your_password123;
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__VirtualHost=oficina
+      - RabbitMq__Username=oficina
+      - RabbitMq__Password=oficina_dev
+      # Chave dos endpoints /internal/* (Lambda de autenticação). Só para desenvolvimento.
+      - InternalApi__Key=dev-internal-key-troque-em-producao
+      # Prazos curtos para demonstrar as compensações por timeout.
+      - Saga__Prazos__Aprovacao=00:02:00
+      - Saga__Prazos__Pagamento=00:02:00
+      - Saga__Prazos__Execucao=00:02:00
     depends_on:
       db:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  rabbitmq:
+    # Mesma imagem dos outros serviços, validada com o MassTransit 8.4.1 no spike S1.
+    # O usuário "guest" só conecta via localhost, por isso o usuário próprio.
+    # UI de management: http://localhost:15672 (oficina / oficina_dev).
+    image: rabbitmq:4.1-management
+    environment:
+      RABBITMQ_DEFAULT_USER: oficina
+      RABBITMQ_DEFAULT_PASS: oficina_dev
+      RABBITMQ_DEFAULT_VHOST: oficina
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   db:
     image: mysql:8.4

@@ -22,6 +22,232 @@ namespace OficinaMecanica.Infrastructure.Migrations
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
+            modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.InboxState", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("Consumed")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("ConsumerId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("Delivered")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("ExpirationTime")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long?>("LastSequenceNumber")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("LockId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("ReceiveCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("Received")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("timestamp(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Delivered");
+
+                    b.ToTable("InboxState");
+                });
+
+            modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxMessage", b =>
+                {
+                    b.Property<long>("SequenceNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("SequenceNumber"));
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<Guid?>("ConversationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid?>("CorrelationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("DestinationAddress")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<DateTime?>("EnqueueTime")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("ExpirationTime")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("FaultAddress")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<string>("Headers")
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid?>("InboxConsumerId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid?>("InboxMessageId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid?>("InitiatorId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("MessageType")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid?>("OutboxId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Properties")
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("ResponseAddress")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<DateTime>("SentTime")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("SourceAddress")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.HasKey("SequenceNumber");
+
+                    b.HasIndex("EnqueueTime");
+
+                    b.HasIndex("ExpirationTime");
+
+                    b.HasIndex("OutboxId", "SequenceNumber")
+                        .IsUnique();
+
+                    b.HasIndex("InboxMessageId", "InboxConsumerId", "SequenceNumber")
+                        .IsUnique();
+
+                    b.ToTable("OutboxMessage");
+                });
+
+            modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxState", b =>
+                {
+                    b.Property<Guid>("OutboxId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("Created")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("Delivered")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long?>("LastSequenceNumber")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("LockId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("timestamp(6)");
+
+                    b.HasKey("OutboxId");
+
+                    b.HasIndex("Created");
+
+                    b.ToTable("OutboxState");
+                });
+
+            modelBuilder.Entity("OficinaMecanica.Application.Saga.OrdemServicoSagaState", b =>
+                {
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("AtualizadoEm")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("CriadoEm")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CurrentState")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("LinkPagamento")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("MotivoCancelamento")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("NumeroOS")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<Guid?>("OrcamentoId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("OsId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("PagamentoId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("PrazoExpiraEm")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("CorrelationId");
+
+                    b.HasIndex("OsId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SagaOrdemServico_OsId");
+
+                    b.HasIndex("PrazoExpiraEm")
+                        .HasDatabaseName("IX_SagaOrdemServico_PrazoExpiraEm");
+
+                    b.ToTable("SagaOrdemServico", (string)null);
+                });
+
             modelBuilder.Entity("OficinaMecanica.Domain.Entities.Cliente", b =>
                 {
                     b.Property<int>("Id")
@@ -75,6 +301,44 @@ namespace OficinaMecanica.Infrastructure.Migrations
                         .HasDatabaseName("IX_Cliente_CpfCnpj");
 
                     b.ToTable("Clientes");
+                });
+
+            modelBuilder.Entity("OficinaMecanica.Domain.Entities.HistoricoStatusOS", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Motivo")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<DateTime>("OcorridoEm")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("OrdemServicoId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Origem")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StatusAnterior")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StatusNovo")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrdemServicoId")
+                        .HasDatabaseName("IX_HistoricoStatus_OrdemServico");
+
+                    b.ToTable("HistoricoStatusOS", (string)null);
                 });
 
             modelBuilder.Entity("OficinaMecanica.Domain.Entities.ItemOrdemServico", b =>
@@ -187,6 +451,9 @@ namespace OficinaMecanica.Infrastructure.Migrations
                     b.Property<int>("ClienteId")
                         .HasColumnType("int");
 
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("char(36)");
+
                     b.Property<DateTime?>("DataAprovacaoOrcamento")
                         .HasColumnType("datetime(6)");
 
@@ -219,6 +486,9 @@ namespace OficinaMecanica.Infrastructure.Migrations
                     b.Property<bool>("OrcamentoAprovado")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<DateTime?>("PecasDevolvidasEm")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -232,6 +502,10 @@ namespace OficinaMecanica.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ClienteId");
+
+                    b.HasIndex("CorrelationId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_OrdenServico_CorrelationId");
 
                     b.HasIndex("NumeroOS")
                         .IsUnique()
@@ -380,6 +654,29 @@ namespace OficinaMecanica.Infrastructure.Migrations
                     b.ToTable("Veiculos");
                 });
 
+            modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxMessage", b =>
+                {
+                    b.HasOne("MassTransit.EntityFrameworkCoreIntegration.OutboxState", null)
+                        .WithMany()
+                        .HasForeignKey("OutboxId");
+
+                    b.HasOne("MassTransit.EntityFrameworkCoreIntegration.InboxState", null)
+                        .WithMany()
+                        .HasForeignKey("InboxMessageId", "InboxConsumerId")
+                        .HasPrincipalKey("MessageId", "ConsumerId");
+                });
+
+            modelBuilder.Entity("OficinaMecanica.Domain.Entities.HistoricoStatusOS", b =>
+                {
+                    b.HasOne("OficinaMecanica.Domain.Entities.OrdemServico", "OrdemServico")
+                        .WithMany("Historico")
+                        .HasForeignKey("OrdemServicoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OrdemServico");
+                });
+
             modelBuilder.Entity("OficinaMecanica.Domain.Entities.ItemOrdemServico", b =>
                 {
                     b.HasOne("OficinaMecanica.Domain.Entities.OrdemServico", "OrdemServico")
@@ -444,6 +741,8 @@ namespace OficinaMecanica.Infrastructure.Migrations
 
             modelBuilder.Entity("OficinaMecanica.Domain.Entities.OrdemServico", b =>
                 {
+                    b.Navigation("Historico");
+
                     b.Navigation("Itens");
                 });
 
