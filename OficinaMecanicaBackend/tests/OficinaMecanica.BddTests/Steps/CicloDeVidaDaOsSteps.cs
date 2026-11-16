@@ -65,7 +65,10 @@ public class CicloDeVidaDaOsSteps
         // Commit feito: o "outbox" entrega o OrdemServicoAberta e a saga nasce.
         await _ambiente.Publicador.EntregarAsync(_ambiente.Harness.Bus);
         await _ambiente.EsperarEstadoAsync(_correlationId, "AguardandoDiagnostico");
-        Assert.Single(_ambiente.Simulados.Recebidos<SolicitarDiagnostico>());
+        // O comando chega ao execution simulado de forma assíncrona, depois da transição.
+        await AmbienteSaga.EsperarAsync(
+            () => Task.FromResult(_ambiente.Simulados.Recebidos<SolicitarDiagnostico>().Any(c => c.CorrelationId == _correlationId)),
+            () => "o execution-service não recebeu SolicitarDiagnostico.");
     }
 
     [Given("que o execution-service vai rejeitar a execução")]

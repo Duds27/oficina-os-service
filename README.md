@@ -740,25 +740,33 @@ cd OficinaMecanicaBackend
 dotnet test
 ```
 
-> **Docker é necessário para os testes de integração.** Eles sobem um contêiner MySQL 8.4 via Testcontainers; garanta que o Docker esteja em execução antes de rodar `dotnet test`. Os testes unitários (Validators/Services) não dependem de Docker.
+> **Docker é necessário para os testes de integração.** Eles sobem MySQL 8.4 e RabbitMQ 4.1 via Testcontainers; garanta que o Docker esteja em execução antes de rodar `dotnet test`. Os testes de domínio, de casos de uso, da saga e o BDD não dependem de Docker.
 
 ### Estrutura
 
-| Categoria                | Localização              | Descrição                                             |
-| ------------------------ | ------------------------ | ----------------------------------------------------- |
-| Unitários — Validators   | `tests/.../Validators/`  | CpfCnpjValidatorTests, PlacaValidatorTests            |
-| Unitários — Casos de uso | `tests/.../Services/`    | OrdemServicoUseCasesTests, PecaUseCasesTests          |
-| Integração               | `tests/.../Integration/` | ClientesControllerTests, OrdensServicoControllerTests |
+| Categoria                     | Localização                                    | Descrição                                                                                         |
+| ----------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Unitários — Domínio           | `tests/OficinaMecanicaBackend.Tests/Domain/`     | Transições de status, histórico, avanço fora de ordem, cancelamento                               |
+| Unitários — Validators        | `tests/OficinaMecanicaBackend.Tests/Validators/` | CPF/CNPJ, placa e regras de entrada dos cadastros                                                  |
+| Unitários — Casos de uso      | `tests/OficinaMecanicaBackend.Tests/Services/`   | OS (abertura, entrega, histórico, cancelamento), estoque, peças                                    |
+| Contratos de mensagens        | `tests/OficinaMecanicaBackend.Tests/Contracts/`  | URN, exchange e campos das 20 mensagens contra o catálogo de `docs/contratos-mensagens.md`         |
+| Saga (state machine)          | `tests/OficinaMecanicaBackend.Tests/Saga/`       | Cada transição, compensações C1/C2/C3, prazos, eventos fora de ordem e repetidos (test harness)    |
+| Integração                    | `tests/OficinaMecanicaBackend.Tests/Integration/`| API + MySQL real; saga com repositório EF; ponta a ponta com RabbitMQ real                         |
+| BDD                           | `tests/OficinaMecanica.BddTests/`                | Reqnroll: "Ciclo de vida da Ordem de Serviço coordenado por Saga" (5 cenários)                     |
 
-Os testes unitários de Services usam SQLite in-memory (rápidos, sem dependências externas). Já os testes de integração usam `WebApplicationFactory<Program>` sobre um **MySQL 8.4 real provisionado via Testcontainers**, exercitando o mesmo provider (Pomelo) e as mesmas migrations do ambiente de produção — em vez de um banco substituto. O JWT é reconfigurado com uma chave de teste nesses testes.
+- **Casos de uso:** SQLite in-memory (rápidos, sem dependências externas).
+- **Saga:** test harness do MassTransit, com transporte e repositório em memória e as operações na OS simuladas.
+- **Integração:** `WebApplicationFactory<Program>` sobre um **MySQL 8.4 real** (Testcontainers), com o mesmo provider (Pomelo) e as mesmas migrations de produção. O RabbitMQ é trocado pelo transporte em memória do test harness, mas a saga, o outbox e o inbox continuam no MySQL. `MensageriaRabbitMqTests` usa um **RabbitMQ 4.1 real**. O JWT é reconfigurado com uma chave de teste.
+- **BDD:** a saga, os casos de uso e os repositórios reais sobre SQLite, com o billing-service e o execution-service simulados por consumidores nas filas de comando.
 
 ### Cobertura
 
 ```bash
-dotnet test --collect:"XPlat Code Coverage"
+cd OficinaMecanicaBackend
+dotnet test --settings coverlet.runsettings
 ```
 
-O relatório é gerado em `tests/OficinaMecanicaBackend.Tests/TestResults/*/coverage.cobertura.xml`.
+Gera um `coverage.cobertura.xml` por projeto de teste em `tests/*/TestResults/`. Exclusões, configuradas em `coverlet.runsettings`: `Migrations/` (inclui os `*.Designer.cs`), `Program.cs` e `DTOs/`. Na Fase 4, a cobertura de linhas dos dois projetos juntos ficou em torno de 95%. O gate de 80% no CI entra na Etapa 4 (ReportGenerator + SonarCloud).
 
 ---
 
