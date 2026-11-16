@@ -20,6 +20,18 @@ public static class DependencyInjection
                 new MySqlServerVersion(new Version(8, 4, 0)),
                 mysql => mysql.MigrationsAssembly(typeof(AppDbContext).Assembly.GetName().Name)));
 
+        services.AddPersistencia();
+        services.AddSingleton<IAutenticador, JwtAutenticador>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Repositórios, unidade de trabalho e notificador sobre o AppDbContext já registrado.
+    /// Separado do provedor do banco para os testes BDD usarem o mesmo código com SQLite.
+    /// </summary>
+    public static IServiceCollection AddPersistencia(this IServiceCollection services)
+    {
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IClienteRepository, ClienteRepository>();
         services.AddScoped<IVeiculoRepository, VeiculoRepository>();
@@ -29,7 +41,6 @@ public static class DependencyInjection
         services.AddScoped<IConsultaSagaOs, ConsultaSagaOs>();
 
         services.AddScoped<INotificadorStatus, EmailNotificadorStatus>();
-        services.AddSingleton<IAutenticador, JwtAutenticador>();
 
         return services;
     }
