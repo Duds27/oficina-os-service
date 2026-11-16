@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using OficinaMecanica.Application.Abstractions;
 using OficinaMecanica.Application.Common;
 using OficinaMecanica.Application.DTOs.OrdensServico;
+using OficinaMecanica.Application.Services;
 using OficinaMecanica.Domain.Entities;
 using OficinaMecanica.Domain.Enums;
 
@@ -16,6 +17,7 @@ public class OrdemServicoUseCases
     private readonly IServicoRepository _servicos;
     private readonly IUnitOfWork _uow;
     private readonly INotificadorStatus _notificador;
+    private readonly EstoqueService _estoque;
     private readonly ILogger<OrdemServicoUseCases> _logger;
 
     public OrdemServicoUseCases(
@@ -26,6 +28,7 @@ public class OrdemServicoUseCases
         IServicoRepository servicos,
         IUnitOfWork uow,
         INotificadorStatus notificador,
+        EstoqueService estoque,
         ILogger<OrdemServicoUseCases> logger)
     {
         _ordens = ordens;
@@ -35,6 +38,7 @@ public class OrdemServicoUseCases
         _servicos = servicos;
         _uow = uow;
         _notificador = notificador;
+        _estoque = estoque;
         _logger = logger;
     }
 
@@ -115,6 +119,7 @@ public class OrdemServicoUseCases
         var ordem = new OrdemServico
         {
             NumeroOS = await GerarNumeroOSAsync(),
+            CorrelationId = Guid.NewGuid(),
             ClienteId = dto.ClienteId,
             VeiculoId = dto.VeiculoId,
             Status = StatusOrdemServico.Recebida,
@@ -158,20 +163,7 @@ public class OrdemServicoUseCases
             return ServiceResult<OrdemServicoDto>.BadRequest(error!);
 
         var statusAnterior = ordem.Status;
-        ordem.AplicarStatus(dto.NovoStatus, DateTime.UtcNow);
-        await _uow.SalvarAsync();
-
-        // Duração da fase de execução (Em Execução → Finalizada), em segundos, quando aplicável.
-        double? duracaoExecucaoSegundos =
-            dto.NovoStatus == StatusOrdemServico.Finalizada
-            && ordem.DataInicioExecucao.HasValue && ordem.DataFinalizacao.HasValue
-                ? (ordem.DataFinalizacao.Value - ordem.DataInicioExecucao.Value).TotalSeconds
-                : null;
-
-        // Evento de negócio estruturado: tempo médio por status e transições nos dashboards.
-        _logger.LogInformation(
-            "Status da OS alterado. Evento={Evento} NumeroOS={NumeroOS} StatusAnterior={StatusAnterior} StatusNovo={StatusNovo} DuracaoExecucaoSegundos={DuracaoExecucaoSegundos}",
-            "os_status_alterado", ordem.NumeroOS, statusAnterior.ToString(), dto.NovoStatus.ToString(), duracaoExecucaoSegundos);
+        ordem.MudarStatus(dto.NovoStatus, OrigemMudancaStatus.Usuario, motivo: null, DateTime.UtcNow);
 
         try
         {
@@ -185,6 +177,21 @@ public class OrdemServicoUseCases
                 "os_falha_processamento", ordem.NumeroOS, dto.NovoStatus.ToString());
             throw;
         }
+
+        // Status, histórico e notificação são gravados juntos.
+        await _uow.SalvarAsync();
+
+        // Duração da fase de execução (Em Execução → Finalizada), em segundos, quando aplicável.
+        double? duracaoExecucaoSegundos =
+            dto.NovoStatus == StatusOrdemServico.Finalizada
+            && ordem.DataInicioExecucao.HasValue && ordem.DataFinalizacao.HasValue
+                ? (ordem.DataFinalizacao.Value - ordem.DataInicioExecucao.Value).TotalSeconds
+                : null;
+
+        // Evento de negócio estruturado: tempo médio por status e transições nos dashboards.
+        _logger.LogInformation(
+            "Status da OS alterado. Evento={Evento} NumeroOS={NumeroOS} StatusAnterior={StatusAnterior} StatusNovo={StatusNovo} DuracaoExecucaoSegundos={DuracaoExecucaoSegundos}",
+            "os_status_alterado", ordem.NumeroOS, statusAnterior.ToString(), dto.NovoStatus.ToString(), duracaoExecucaoSegundos);
 
         return ServiceResult<OrdemServicoDto>.Ok(ToDto(ordem));
     }
@@ -216,8 +223,9 @@ public class OrdemServicoUseCases
             if (ordem is null)
                 return ServiceResult<OrdemServicoDto>.NotFound($"Ordem de serviço {ordemServicoId} não encontrada.");
 
-            if (ordem.Status is StatusOrdemServico.Finalizada or StatusOrdemServico.Entregue)
-                return ServiceResult<OrdemServicoDto>.BadRequest("Não é possível adicionar itens a uma OS finalizada ou entregue.");
+            if (!ordem.PermiteAlterarItens)
+                return ServiceResult<OrdemServicoDto>.BadRequest(
+                    $"Itens só podem ser adicionados durante o diagnóstico (Recebida ou EmDiagnostico). Status atual: {ordem.Status}.");
 
             decimal precoUnitario;
 
@@ -293,15 +301,11 @@ public class OrdemServicoUseCases
             if (item is null)
                 return ServiceResult<OrdemServicoDto>.NotFound($"Item {itemId} não encontrado na OS {ordemServicoId}.");
 
-            if (item.Tipo == TipoItemOrdemServico.Peca && item.PecaId.HasValue)
-            {
-                var peca = await _pecas.ObterAsync(item.PecaId.Value, tracking: true);
-                if (peca is not null)
-                {
-                    peca.QuantidadeEstoque += (int)item.Quantidade;
-                    peca.DataAtualizacao = DateTime.UtcNow;
-                }
-            }
+            if (!ordem.PermiteAlterarItens)
+                return ServiceResult<OrdemServicoDto>.BadRequest(
+                    $"Itens só podem ser removidos durante o diagnóstico (Recebida ou EmDiagnostico). Status atual: {ordem.Status}.");
+
+            await _estoque.DevolverItemAsync(item, DateTime.UtcNow);
 
             _ordens.RemoverItem(item);
 

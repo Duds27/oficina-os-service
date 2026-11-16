@@ -77,6 +77,44 @@ namespace OficinaMecanica.Infrastructure.Migrations
                     b.ToTable("Clientes");
                 });
 
+            modelBuilder.Entity("OficinaMecanica.Domain.Entities.HistoricoStatusOS", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Motivo")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<DateTime>("OcorridoEm")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("OrdemServicoId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Origem")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StatusAnterior")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StatusNovo")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrdemServicoId")
+                        .HasDatabaseName("IX_HistoricoStatus_OrdemServico");
+
+                    b.ToTable("HistoricoStatusOS", (string)null);
+                });
+
             modelBuilder.Entity("OficinaMecanica.Domain.Entities.ItemOrdemServico", b =>
                 {
                     b.Property<int>("Id")
@@ -187,6 +225,9 @@ namespace OficinaMecanica.Infrastructure.Migrations
                     b.Property<int>("ClienteId")
                         .HasColumnType("int");
 
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("char(36)");
+
                     b.Property<DateTime?>("DataAprovacaoOrcamento")
                         .HasColumnType("datetime(6)");
 
@@ -219,6 +260,9 @@ namespace OficinaMecanica.Infrastructure.Migrations
                     b.Property<bool>("OrcamentoAprovado")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<DateTime?>("PecasDevolvidasEm")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -232,6 +276,10 @@ namespace OficinaMecanica.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ClienteId");
+
+                    b.HasIndex("CorrelationId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_OrdenServico_CorrelationId");
 
                     b.HasIndex("NumeroOS")
                         .IsUnique()
@@ -380,6 +428,17 @@ namespace OficinaMecanica.Infrastructure.Migrations
                     b.ToTable("Veiculos");
                 });
 
+            modelBuilder.Entity("OficinaMecanica.Domain.Entities.HistoricoStatusOS", b =>
+                {
+                    b.HasOne("OficinaMecanica.Domain.Entities.OrdemServico", "OrdemServico")
+                        .WithMany("Historico")
+                        .HasForeignKey("OrdemServicoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OrdemServico");
+                });
+
             modelBuilder.Entity("OficinaMecanica.Domain.Entities.ItemOrdemServico", b =>
                 {
                     b.HasOne("OficinaMecanica.Domain.Entities.OrdemServico", "OrdemServico")
@@ -444,6 +503,8 @@ namespace OficinaMecanica.Infrastructure.Migrations
 
             modelBuilder.Entity("OficinaMecanica.Domain.Entities.OrdemServico", b =>
                 {
+                    b.Navigation("Historico");
+
                     b.Navigation("Itens");
                 });
 

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using OficinaMecanica.Application.DTOs.OrdensServico;
+using OficinaMecanica.Application.Services;
 using OficinaMecanica.Application.UseCases;
 using OficinaMecanica.Domain.Entities;
 using OficinaMecanica.Domain.Enums;
@@ -41,6 +42,7 @@ public class OrdemServicoUseCasesTests : IDisposable
         new ServicoRepository(_db),
         new UnitOfWork(_db),
         _notificador,
+        new EstoqueService(new PecaRepository(_db)),
         logger);
 
     public void Dispose()
@@ -70,6 +72,7 @@ public class OrdemServicoUseCasesTests : IDisposable
         var os = new OrdemServico
         {
             NumeroOS = $"OS-{DateTime.UtcNow.Year}-{Random.Shared.Next(100000, 999999):D6}",
+            CorrelationId = Guid.NewGuid(),
             ClienteId = clienteId,
             VeiculoId = veiculoId,
             Status = status,
@@ -88,6 +91,7 @@ public class OrdemServicoUseCasesTests : IDisposable
         var os = new OrdemServico
         {
             NumeroOS = $"OS-{DateTime.UtcNow.Year}-{Random.Shared.Next(100000, 999999):D6}",
+            CorrelationId = Guid.NewGuid(),
             ClienteId = clienteId,
             VeiculoId = veiculoId,
             Status = StatusOrdemServico.Finalizada,
@@ -130,6 +134,22 @@ public class OrdemServicoUseCasesTests : IDisposable
         Assert.Matches($@"^OS-{DateTime.UtcNow.Year}-\d{{6}}$", result.Data!.NumeroOS);
     }
 
+    [Fact]
+    public async Task CriarAsync_GeraCorrelationIdUnicoPorOS()
+    {
+        var (c, v) = await SeedClienteVeiculoAsync();
+
+        var r1 = await _useCases.CriarAsync(new CreateOrdemServicoDto(c.Id, v.Id, null, null));
+        var r2 = await _useCases.CriarAsync(new CreateOrdemServicoDto(c.Id, v.Id, null, null));
+
+        var ids = await _db.OrdensServico.AsNoTracking()
+            .Where(o => o.Id == r1.Data!.Id || o.Id == r2.Data!.Id)
+            .Select(o => o.CorrelationId)
+            .ToListAsync();
+        Assert.DoesNotContain(Guid.Empty, ids);
+        Assert.Equal(2, ids.Distinct().Count());
+    }
+
     // ────── AvancarStatusAsync ──────
 
     [Fact]
@@ -151,7 +171,7 @@ public class OrdemServicoUseCasesTests : IDisposable
     public async Task AvancarStatusAsync_EmExecucao_DefineDataInicioExecucao()
     {
         var (c, v) = await SeedClienteVeiculoAsync();
-        var os = await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.AguardandoAprovacao, orcamentoAprovado: true);
+        var os = await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.AguardandoPagamento, orcamentoAprovado: true);
 
         var result = await _useCases.AvancarStatusAsync(os.Id,
             new UpdateStatusDto(StatusOrdemServico.EmExecucao));
@@ -175,16 +195,32 @@ public class OrdemServicoUseCasesTests : IDisposable
     }
 
     [Fact]
-    public async Task AvancarStatusAsync_AguardandoAprovacaoSemAprovacao_RetornaBadRequest()
+    public async Task AvancarStatusAsync_AguardandoAprovacaoDiretoParaExecucao_RetornaBadRequest()
     {
+        // Mesmo com o orçamento aprovado, a execução só começa depois do pagamento.
         var (c, v) = await SeedClienteVeiculoAsync();
-        var os = await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.AguardandoAprovacao, orcamentoAprovado: false);
+        var os = await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.AguardandoAprovacao, orcamentoAprovado: true);
 
         var result = await _useCases.AvancarStatusAsync(os.Id,
             new UpdateStatusDto(StatusOrdemServico.EmExecucao));
 
         Assert.False(result.Success);
         Assert.Equal(400, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task AvancarStatusAsync_GravaHistoricoComOrigemUsuario()
+    {
+        var (c, v) = await SeedClienteVeiculoAsync();
+        var os = await SeedOrdemAsync(c.Id, v.Id);
+
+        await _useCases.AvancarStatusAsync(os.Id, new UpdateStatusDto(StatusOrdemServico.EmDiagnostico));
+
+        var historico = await _db.HistoricoStatus.AsNoTracking().SingleAsync(h => h.OrdemServicoId == os.Id);
+        Assert.Equal(StatusOrdemServico.Recebida, historico.StatusAnterior);
+        Assert.Equal(StatusOrdemServico.EmDiagnostico, historico.StatusNovo);
+        Assert.Equal(OrigemMudancaStatus.Usuario, historico.Origem);
+        Assert.Equal(os.CorrelationId, historico.CorrelationId);
     }
 
     // ────── AprovarOrcamentoAsync ──────
@@ -215,6 +251,24 @@ public class OrdemServicoUseCasesTests : IDisposable
     }
 
     // ────── AdicionarItemAsync ──────
+
+    [Theory]
+    [InlineData(StatusOrdemServico.AguardandoAprovacao)]
+    [InlineData(StatusOrdemServico.AguardandoPagamento)]
+    [InlineData(StatusOrdemServico.EmExecucao)]
+    [InlineData(StatusOrdemServico.Cancelada)]
+    public async Task AdicionarItemAsync_ForaDoDiagnostico_RetornaBadRequest(StatusOrdemServico status)
+    {
+        var (c, v) = await SeedClienteVeiculoAsync();
+        var os = await SeedOrdemAsync(c.Id, v.Id, status);
+        var servico = await SeedServicoAsync();
+
+        var result = await _useCases.AdicionarItemAsync(os.Id,
+            new AddItemDto(TipoItemOrdemServico.Servico, servico.Id, null, 1));
+
+        Assert.False(result.Success);
+        Assert.Equal(400, result.StatusCode);
+    }
 
     [Fact]
     public async Task AdicionarItemAsync_PecaEstoqueDebitadoCorretamente()
@@ -293,6 +347,26 @@ public class OrdemServicoUseCasesTests : IDisposable
         Assert.Equal(10, peca.QuantidadeEstoque);
     }
 
+    [Fact]
+    public async Task RemoverItemAsync_ForaDoDiagnostico_RetornaBadRequestEMantemEstoque()
+    {
+        var (c, v) = await SeedClienteVeiculoAsync();
+        var os = await SeedOrdemAsync(c.Id, v.Id);
+        var peca = await SeedPecaAsync(estoque: 10);
+        await _useCases.AdicionarItemAsync(os.Id, new AddItemDto(TipoItemOrdemServico.Peca, null, peca.Id, 4));
+        var itemId = (await _useCases.ObterAsync(os.Id)).Data!.Itens.First().Id;
+
+        var ordem = await _db.OrdensServico.SingleAsync(o => o.Id == os.Id);
+        ordem.Status = StatusOrdemServico.AguardandoAprovacao;
+        await _db.SaveChangesAsync();
+
+        var result = await _useCases.RemoverItemAsync(os.Id, itemId);
+
+        Assert.Equal(400, result.StatusCode);
+        await _db.Entry(peca).ReloadAsync();
+        Assert.Equal(6, peca.QuantidadeEstoque);
+    }
+
     // ────── ListarAsync (ordenação + exclusão lógica) ──────
 
     [Fact]
@@ -302,20 +376,24 @@ public class OrdemServicoUseCasesTests : IDisposable
         await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.Recebida);
         await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.EmExecucao);
         await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.AguardandoAprovacao);
+        await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.AguardandoPagamento);
         await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.Finalizada);
         await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.Entregue);
+        await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.Cancelada);
 
         var result = await _useCases.ListarAsync();
 
         Assert.True(result.Success);
         var lista = result.Data!.ToList();
-        // Finalizada e Entregue são omitidas
-        Assert.Equal(3, lista.Count);
-        Assert.DoesNotContain(lista, o => o.Status is StatusOrdemServico.Finalizada or StatusOrdemServico.Entregue);
-        // Ordem: EmExecucao > AguardandoAprovacao > Recebida
+        // Finalizada, Entregue e Cancelada são omitidas
+        Assert.Equal(4, lista.Count);
+        Assert.DoesNotContain(lista, o => o.Status is StatusOrdemServico.Finalizada
+            or StatusOrdemServico.Entregue or StatusOrdemServico.Cancelada);
+        // Ordem: EmExecucao > AguardandoPagamento > AguardandoAprovacao > Recebida
         Assert.Equal(StatusOrdemServico.EmExecucao, lista[0].Status);
-        Assert.Equal(StatusOrdemServico.AguardandoAprovacao, lista[1].Status);
-        Assert.Equal(StatusOrdemServico.Recebida, lista[2].Status);
+        Assert.Equal(StatusOrdemServico.AguardandoPagamento, lista[1].Status);
+        Assert.Equal(StatusOrdemServico.AguardandoAprovacao, lista[2].Status);
+        Assert.Equal(StatusOrdemServico.Recebida, lista[3].Status);
     }
 
     [Fact]

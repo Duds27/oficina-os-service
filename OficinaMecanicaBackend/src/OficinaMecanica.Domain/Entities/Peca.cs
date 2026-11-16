@@ -16,4 +16,11 @@ public class Peca
     public ICollection<ItemOrdemServico> ItensOrdemServico { get; set; } = new List<ItemOrdemServico>();
 
     public bool EstoqueBaixo => QuantidadeEstoque < QuantidadeMinima;
+
+    /// <summary>Devolve ao estoque a quantidade reservada por um item de OS.</summary>
+    public void DevolverAoEstoque(decimal quantidade, DateTime agora)
+    {
+        QuantidadeEstoque += (int)quantidade;
+        DataAtualizacao = agora;
+    }
 }

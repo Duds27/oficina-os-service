@@ -10,6 +10,8 @@ namespace OficinaMecanica.Infrastructure.Notifications;
 /// Adapter simulado de notificação por e-mail. Em vez de enviar via SMTP, grava
 /// a notificação numa tabela de outbox e registra um log — suficiente para
 /// demonstrar o requisito "atualização de status via e-mail" de forma testável.
+/// O registro só é adicionado ao contexto; quem chama salva (na saga, junto com
+/// o estado da saga e a OS, na mesma transação).
 /// </summary>
 public class EmailNotificadorStatus : INotificadorStatus
 {
@@ -22,7 +24,7 @@ public class EmailNotificadorStatus : INotificadorStatus
         _logger = logger;
     }
 
-    public async Task NotificarMudancaStatusAsync(
+    public Task NotificarMudancaStatusAsync(
         OrdemServico ordem,
         StatusOrdemServico statusAnterior,
         StatusOrdemServico statusNovo,
@@ -52,11 +54,12 @@ public class EmailNotificadorStatus : INotificadorStatus
         };
 
         _db.NotificacoesOutbox.Add(notificacao);
-        await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
             "E-mail (simulado) enviado para {Email} — OS {NumeroOS}: {Anterior} → {Novo}",
             string.IsNullOrWhiteSpace(email) ? "(cliente sem e-mail)" : email,
             ordem.NumeroOS, statusAnterior, statusNovo);
+
+        return Task.CompletedTask;
     }
 }

@@ -127,7 +127,11 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
         // Volta com token
         await AuthorizeAsync();
 
-        // AguardandoAprovacao → EmExecucao (com orçamento aprovado)
+        // AguardandoAprovacao → AguardandoPagamento → EmExecucao
+        var pagamentoResp = await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
+            new { NovoStatus = (int)StatusOrdemServico.AguardandoPagamento });
+        Assert.Equal(HttpStatusCode.OK, pagamentoResp.StatusCode);
+
         var execResp = await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
             new { NovoStatus = (int)StatusOrdemServico.EmExecucao });
         Assert.Equal(HttpStatusCode.OK, execResp.StatusCode);
@@ -200,6 +204,8 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
         await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/aprovar-orcamento",
             new { Aprovado = true });
         await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
+            new { NovoStatus = (int)StatusOrdemServico.AguardandoPagamento });
+        await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
             new { NovoStatus = (int)StatusOrdemServico.EmExecucao });
         await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
             new { NovoStatus = (int)StatusOrdemServico.Finalizada });
@@ -246,6 +252,8 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
             new { NovoStatus = (int)StatusOrdemServico.AguardandoAprovacao });
         await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/aprovar-orcamento",
             new { Aprovado = true });
+        await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
+            new { NovoStatus = (int)StatusOrdemServico.AguardandoPagamento });
         await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
             new { NovoStatus = (int)StatusOrdemServico.EmExecucao });
         var finalizarResp = await _client.PutAsJsonAsync($"/api/ordens-servico/{os.Id}/status",
