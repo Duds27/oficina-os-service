@@ -24,6 +24,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
     private const string TestJwtAudience = "TestAudience";
     private const string AdminUsername   = "admin";
     private const string AdminPassword   = "admin123";
+    public const string ChaveInterna     = "chave-interna-de-teste";
 
     // Sobe um MySQL real, na mesma versão usada em produção (docker-compose / Dockerfile),
     // para que os testes de integração exercitem o provedor Pomelo/MySQL e as migrations
@@ -69,7 +70,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
                 ["Jwt:Audience"]        = TestJwtAudience,
                 ["Jwt:AdminUsername"]   = AdminUsername,
                 ["Jwt:AdminPassword"]   = AdminPassword,
-                ["Jwt:ExpiresInMinutes"] = "60"
+                ["Jwt:ExpiresInMinutes"] = "60",
+                ["InternalApi:Key"]     = ChaveInterna
             }));
 
         builder.ConfigureServices(services =>

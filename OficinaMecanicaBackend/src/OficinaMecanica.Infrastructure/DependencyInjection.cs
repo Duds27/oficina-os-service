@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OficinaMecanica.Application.Abstractions;
+using OficinaMecanica.Application.Saga;
 using OficinaMecanica.Infrastructure.Data;
 using OficinaMecanica.Infrastructure.Notifications;
 using OficinaMecanica.Infrastructure.Persistence;
@@ -25,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<IPecaRepository, PecaRepository>();
         services.AddScoped<IServicoRepository, ServicoRepository>();
         services.AddScoped<IOrdemServicoRepository, OrdemServicoRepository>();
+        services.AddScoped<IConsultaSagaOs, ConsultaSagaOs>();
 
         services.AddScoped<INotificadorStatus, EmailNotificadorStatus>();
         services.AddSingleton<IAutenticador, JwtAutenticador>();

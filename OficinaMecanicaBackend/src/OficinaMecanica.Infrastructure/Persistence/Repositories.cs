@@ -25,6 +25,9 @@ public class ClienteRepository : IClienteRepository
     public Task<bool> ExistePorCpfCnpjAsync(string cpfCnpj, CancellationToken ct = default) =>
         _db.Clientes.AnyAsync(c => c.CpfCnpj == cpfCnpj, ct);
 
+    public Task<Cliente?> ObterPorCpfCnpjAsync(string cpfCnpj, CancellationToken ct = default) =>
+        _db.Clientes.AsNoTracking().FirstOrDefaultAsync(c => c.CpfCnpj == cpfCnpj, ct);
+
     public async Task AdicionarAsync(Cliente cliente, CancellationToken ct = default) =>
         await _db.Clientes.AddAsync(cliente, ct);
 
@@ -148,6 +151,12 @@ public class OrdemServicoRepository : IOrdemServicoRepository
     public async Task<IReadOnlyList<OrdemServico>> ListarFinalizadasComExecucaoAsync(CancellationToken ct = default) =>
         await _db.OrdensServico.AsNoTracking()
             .Where(o => o.DataInicioExecucao != null && o.DataFinalizacao != null)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<HistoricoStatusOS>> ListarHistoricoAsync(int ordemServicoId, CancellationToken ct = default) =>
+        await _db.HistoricoStatus.AsNoTracking()
+            .Where(h => h.OrdemServicoId == ordemServicoId)
+            .OrderBy(h => h.OcorridoEm).ThenBy(h => h.Id)
             .ToListAsync(ct);
 
     public async Task AdicionarAsync(OrdemServico ordem, CancellationToken ct = default) =>

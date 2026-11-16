@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using OficinaMecanica.API.Middleware;
+using OficinaMecanica.API.Security;
 using OficinaMecanica.Application;
 using OficinaMecanica.Application.Validators;
 using OficinaMecanica.Infrastructure;
@@ -42,6 +43,8 @@ try
     builder.Services.AddInfrastructure(connectionString);
     // RabbitMQ + MassTransit (outbox/inbox no MySQL). O health check do bus entra no /health/ready.
     builder.Services.AddMensageria(builder.Configuration);
+    // Chave dos endpoints internos (/internal/*), chamados pela Lambda de autenticação.
+    builder.Services.Configure<InternalApiOptions>(builder.Configuration.GetSection(InternalApiOptions.Secao));
 
     // JWT Authentication
     var jwtKey = builder.Configuration["Jwt:Key"]

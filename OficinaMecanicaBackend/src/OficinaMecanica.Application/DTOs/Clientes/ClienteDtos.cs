@@ -33,3 +33,9 @@ public record ClienteDto(
     DateTime DataCriacao,
     DateTime? DataAtualizacao
 );
+
+/// <summary>
+/// Resposta do endpoint interno por CPF, usado pela Lambda de autenticação.
+/// Só o necessário para emitir o token: id (claim clienteId), nome e se está ativo.
+/// </summary>
+public record ClienteInternoDto(int Id, string Nome, bool Ativo);

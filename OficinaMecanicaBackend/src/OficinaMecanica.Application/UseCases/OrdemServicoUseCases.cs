@@ -177,66 +177,99 @@ public class OrdemServicoUseCases
         return ServiceResult<OrdemServicoDto>.Created(ToDto(ordemComIncludes!));
     }
 
-    public async Task<ServiceResult<OrdemServicoDto>> AvancarStatusAsync(int id, UpdateStatusDto dto)
+    /// <summary>
+    /// Entrega da OS ao cliente (Finalizada → Entregue). É a única mudança de status feita
+    /// por usuário: as outras vêm da saga, em resposta aos outros serviços.
+    /// </summary>
+    public async Task<ServiceResult<OrdemServicoDto>> EntregarAsync(int id)
     {
         var ordem = await _ordens.ObterComIncludesAsync(id, tracking: true);
         if (ordem is null)
             return ServiceResult<OrdemServicoDto>.NotFound($"Ordem de serviço {id} não encontrada.");
 
-        var (valid, error) = ordem.ValidarTransicao(dto.NovoStatus);
-        if (!valid)
-            return ServiceResult<OrdemServicoDto>.BadRequest(error!);
+        if (ordem.Status != StatusOrdemServico.Finalizada)
+            return ServiceResult<OrdemServicoDto>.BadRequest(
+                $"Só é possível entregar uma OS finalizada. Status atual: {ordem.Status}.");
 
         var statusAnterior = ordem.Status;
-        ordem.MudarStatus(dto.NovoStatus, OrigemMudancaStatus.Usuario, motivo: null, DateTime.UtcNow);
+        ordem.MudarStatus(StatusOrdemServico.Entregue, OrigemMudancaStatus.Usuario, "Entregue ao cliente", DateTime.UtcNow);
 
         try
         {
-            await _notificador.NotificarMudancaStatusAsync(ordem, statusAnterior, dto.NovoStatus);
+            await _notificador.NotificarMudancaStatusAsync(ordem, statusAnterior, StatusOrdemServico.Entregue);
         }
         catch (Exception ex)
         {
             // Falha no processamento/notificação da OS — evento base do alerta de observabilidade.
             _logger.LogError(ex,
                 "Falha ao processar notificação da OS. Evento={Evento} NumeroOS={NumeroOS} StatusNovo={StatusNovo}",
-                "os_falha_processamento", ordem.NumeroOS, dto.NovoStatus.ToString());
+                "os_falha_processamento", ordem.NumeroOS, StatusOrdemServico.Entregue.ToString());
             throw;
         }
 
         // Status, histórico e notificação são gravados juntos.
         await _uow.SalvarAsync();
 
-        // Duração da fase de execução (Em Execução → Finalizada), em segundos, quando aplicável.
-        double? duracaoExecucaoSegundos =
-            dto.NovoStatus == StatusOrdemServico.Finalizada
-            && ordem.DataInicioExecucao.HasValue && ordem.DataFinalizacao.HasValue
-                ? (ordem.DataFinalizacao.Value - ordem.DataInicioExecucao.Value).TotalSeconds
-                : null;
-
-        // Evento de negócio estruturado: tempo médio por status e transições nos dashboards.
+        // Evento de negócio estruturado: transições nos dashboards.
         _logger.LogInformation(
-            "Status da OS alterado. Evento={Evento} NumeroOS={NumeroOS} StatusAnterior={StatusAnterior} StatusNovo={StatusNovo} DuracaoExecucaoSegundos={DuracaoExecucaoSegundos}",
-            "os_status_alterado", ordem.NumeroOS, statusAnterior.ToString(), dto.NovoStatus.ToString(), duracaoExecucaoSegundos);
+            "Status da OS alterado. Evento={Evento} NumeroOS={NumeroOS} StatusAnterior={StatusAnterior} StatusNovo={StatusNovo} Origem={Origem}",
+            "os_status_alterado", ordem.NumeroOS, statusAnterior.ToString(), StatusOrdemServico.Entregue.ToString(),
+            OrigemMudancaStatus.Usuario.ToString());
 
         return ServiceResult<OrdemServicoDto>.Ok(ToDto(ordem));
     }
 
-    public async Task<ServiceResult<OrdemServicoDto>> AprovarOrcamentoAsync(int id, AprovarOrcamentoDto dto)
+    /// <summary>Transições de status da OS, da mais antiga para a mais recente.</summary>
+    public async Task<ServiceResult<IEnumerable<HistoricoStatusDto>>> ListarHistoricoAsync(int id)
     {
-        var ordem = await _ordens.ObterComIncludesAsync(id, tracking: true);
+        if (await _ordens.ObterAsync(id) is null)
+            return ServiceResult<IEnumerable<HistoricoStatusDto>>.NotFound($"Ordem de serviço {id} não encontrada.");
+
+        var historico = await _ordens.ListarHistoricoAsync(id);
+        return ServiceResult<IEnumerable<HistoricoStatusDto>>.Ok(historico.Select(h => new HistoricoStatusDto(
+            h.StatusAnterior.ToString(),
+            h.StatusNovo.ToString(),
+            h.Origem.ToString(),
+            h.Motivo,
+            h.OcorridoEm)));
+    }
+
+    /// <summary>
+    /// Pede o cancelamento da OS. Só publica o evento (pelo outbox): a saga aplica a
+    /// compensação do estado em que estiver (docs/contratos-mensagens.md, seção 4).
+    /// </summary>
+    public async Task<ServiceResult<CancelamentoSolicitadoDto>> CancelarAsync(int id, string? motivo, string solicitadoPor)
+    {
+        var ordem = await _ordens.ObterAsync(id);
         if (ordem is null)
-            return ServiceResult<OrdemServicoDto>.NotFound($"Ordem de serviço {id} não encontrada.");
+            return ServiceResult<CancelamentoSolicitadoDto>.NotFound($"Ordem de serviço {id} não encontrada.");
 
-        if (ordem.Status != StatusOrdemServico.AguardandoAprovacao)
-            return ServiceResult<OrdemServicoDto>.BadRequest(
-                "Aprovação de orçamento só é possível quando o status é 'AguardandoAprovacao'.");
+        if (ordem.Encerrada)
+            return ServiceResult<CancelamentoSolicitadoDto>.Conflict(
+                $"A OS já está encerrada ({ordem.Status}) e não pode ser cancelada.");
 
-        ordem.OrcamentoAprovado = dto.Aprovado;
-        ordem.DataAprovacaoOrcamento = DateTime.UtcNow;
-        ordem.DataAtualizacao = DateTime.UtcNow;
+        if (ordem.Status == StatusOrdemServico.EmExecucao)
+            return ServiceResult<CancelamentoSolicitadoDto>.Conflict(
+                "A OS está em execução e não pode mais ser cancelada.");
 
+        var motivoFinal = string.IsNullOrWhiteSpace(motivo) ? "Cancelamento solicitado" : motivo.Trim();
+        await _publicador.PublicarAsync(new CancelamentoSolicitado
+        {
+            CorrelationId = ordem.CorrelationId,
+            OsId = ordem.Id,
+            NumeroOS = ordem.NumeroOS,
+            OcorridoEm = DateTime.UtcNow,
+            Motivo = motivoFinal,
+            SolicitadoPor = solicitadoPor
+        });
         await _uow.SalvarAsync();
-        return ServiceResult<OrdemServicoDto>.Ok(ToDto(ordem));
+
+        _logger.LogInformation(
+            "Cancelamento da OS solicitado. Evento={Evento} NumeroOS={NumeroOS} SolicitadoPor={SolicitadoPor}",
+            "os_cancelamento_solicitado", ordem.NumeroOS, solicitadoPor);
+
+        return ServiceResult<CancelamentoSolicitadoDto>.Ok(
+            new CancelamentoSolicitadoDto(ordem.Id, ordem.NumeroOS, ordem.CorrelationId, motivoFinal));
     }
 
     public async Task<ServiceResult<OrdemServicoDto>> AdicionarItemAsync(int ordemServicoId, AddItemDto dto)

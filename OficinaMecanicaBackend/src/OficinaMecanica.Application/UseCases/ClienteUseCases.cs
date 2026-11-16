@@ -33,6 +33,18 @@ public class ClienteUseCases
         return ServiceResult<ClienteDto>.Ok(ToDto(cliente));
     }
 
+    /// <summary>
+    /// Cliente pelo CPF/CNPJ, com ou sem máscara. Usado pela Lambda de autenticação pelo
+    /// endpoint interno, no lugar de consultar o banco do os-service direto.
+    /// </summary>
+    public async Task<ServiceResult<ClienteInternoDto>> ObterPorCpfCnpjAsync(string cpfCnpj)
+    {
+        var cliente = await _clientes.ObterPorCpfCnpjAsync(Normalizar(cpfCnpj));
+        return cliente is null
+            ? ServiceResult<ClienteInternoDto>.NotFound("Cliente não encontrado.")
+            : ServiceResult<ClienteInternoDto>.Ok(new ClienteInternoDto(cliente.Id, cliente.Nome, cliente.Ativo));
+    }
+
     public async Task<ServiceResult<ClienteDto>> CriarAsync(CreateClienteDto dto)
     {
         if (!CpfCnpjValidator.IsValid(dto.CpfCnpj))

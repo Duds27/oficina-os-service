@@ -13,6 +13,12 @@ services:
       - RabbitMq__VirtualHost=oficina
       - RabbitMq__Username=oficina
       - RabbitMq__Password=oficina_dev
+      # Chave dos endpoints /internal/* (Lambda de autenticação). Só para desenvolvimento.
+      - InternalApi__Key=dev-internal-key-troque-em-producao
+      # Prazos curtos para demonstrar as compensações por timeout.
+      - Saga__Prazos__Aprovacao=00:02:00
+      - Saga__Prazos__Pagamento=00:02:00
+      - Saga__Prazos__Execucao=00:02:00
     depends_on:
       db:
         condition: service_healthy

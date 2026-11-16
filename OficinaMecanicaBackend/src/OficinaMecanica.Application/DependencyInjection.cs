@@ -14,6 +14,7 @@ public static class DependencyInjection
         services.AddScoped<PecaUseCases>();
         services.AddScoped<ServicoUseCases>();
         services.AddScoped<OrdemServicoUseCases>();
+        services.AddScoped<SagaOrdemServicoUseCases>();
         services.AddScoped<AutenticarUseCase>();
         services.AddScoped<EstoqueService>();
         services.AddScoped<IOperacoesOsSaga, OperacoesOsSaga>();

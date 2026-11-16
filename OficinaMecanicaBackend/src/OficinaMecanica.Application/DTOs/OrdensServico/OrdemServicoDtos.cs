@@ -9,9 +9,8 @@ public record CreateOrdemServicoDto(
     DateTime? DataPrevisaoTermino
 );
 
-public record UpdateStatusDto(StatusOrdemServico NovoStatus);
-
-public record AprovarOrcamentoDto(bool Aprovado);
+/// <summary>Pedido de cancelamento da OS. A saga decide as compensações pelo estado atual.</summary>
+public record CancelarOrdemServicoDto(string? Motivo);
 
 public record AddItemDto(
     TipoItemOrdemServico Tipo,
@@ -73,3 +72,28 @@ public record TempoMedioExecucaoDto(
     double TempoMedioHoras,
     string TempoMedioFormatado
 );
+
+/// <summary>Uma transição de status da OS, do histórico.</summary>
+public record HistoricoStatusDto(
+    string StatusAnterior,
+    string StatusNovo,
+    string Origem,
+    string? Motivo,
+    DateTime OcorridoEm
+);
+
+/// <summary>Estado da saga da OS (endpoint administrativo).</summary>
+public record SagaOrdemServicoDto(
+    Guid CorrelationId,
+    string Estado,
+    DateTime? PrazoExpiraEm,
+    Guid? OrcamentoId,
+    Guid? PagamentoId,
+    string? LinkPagamento,
+    string? MotivoCancelamento,
+    DateTime CriadoEm,
+    DateTime? AtualizadoEm
+);
+
+/// <summary>Resposta do pedido de cancelamento (202): a saga processa em seguida.</summary>
+public record CancelamentoSolicitadoDto(int Id, string NumeroOS, Guid CorrelationId, string Motivo);

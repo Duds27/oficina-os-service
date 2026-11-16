@@ -168,104 +168,136 @@ public class OrdemServicoUseCasesTests : IDisposable
         Assert.Equal(DateTimeKind.Utc, evento.OcorridoEm.Kind);
     }
 
-    // ────── AvancarStatusAsync ──────
+    // ────── EntregarAsync ──────
 
     [Fact]
-    public async Task AvancarStatusAsync_TransicaoValida_RetornaSucessoENotifica()
+    public async Task EntregarAsync_OsFinalizada_EntregaGravaHistoricoENotifica()
     {
         var (c, v) = await SeedClienteVeiculoAsync();
-        var os = await SeedOrdemAsync(c.Id, v.Id);
+        var os = await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.Finalizada);
 
-        var result = await _useCases.AvancarStatusAsync(os.Id,
-            new UpdateStatusDto(StatusOrdemServico.EmDiagnostico));
+        var result = await _useCases.EntregarAsync(os.Id);
 
         Assert.True(result.Success);
-        Assert.Equal(StatusOrdemServico.EmDiagnostico, result.Data!.Status);
-        Assert.Contains(_notificador.Notificacoes,
-            n => n.Anterior == StatusOrdemServico.Recebida && n.Novo == StatusOrdemServico.EmDiagnostico);
-    }
-
-    [Fact]
-    public async Task AvancarStatusAsync_EmExecucao_DefineDataInicioExecucao()
-    {
-        var (c, v) = await SeedClienteVeiculoAsync();
-        var os = await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.AguardandoPagamento, orcamentoAprovado: true);
-
-        var result = await _useCases.AvancarStatusAsync(os.Id,
-            new UpdateStatusDto(StatusOrdemServico.EmExecucao));
-
-        Assert.True(result.Success);
-        Assert.Equal(StatusOrdemServico.EmExecucao, result.Data!.Status);
-        Assert.NotNull(result.Data.DataInicioExecucao);
-    }
-
-    [Fact]
-    public async Task AvancarStatusAsync_TransicaoInvalida_RetornaBadRequest()
-    {
-        var (c, v) = await SeedClienteVeiculoAsync();
-        var os = await SeedOrdemAsync(c.Id, v.Id);
-
-        var result = await _useCases.AvancarStatusAsync(os.Id,
-            new UpdateStatusDto(StatusOrdemServico.EmExecucao));
-
-        Assert.False(result.Success);
-        Assert.Equal(400, result.StatusCode);
-    }
-
-    [Fact]
-    public async Task AvancarStatusAsync_AguardandoAprovacaoDiretoParaExecucao_RetornaBadRequest()
-    {
-        // Mesmo com o orçamento aprovado, a execução só começa depois do pagamento.
-        var (c, v) = await SeedClienteVeiculoAsync();
-        var os = await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.AguardandoAprovacao, orcamentoAprovado: true);
-
-        var result = await _useCases.AvancarStatusAsync(os.Id,
-            new UpdateStatusDto(StatusOrdemServico.EmExecucao));
-
-        Assert.False(result.Success);
-        Assert.Equal(400, result.StatusCode);
-    }
-
-    [Fact]
-    public async Task AvancarStatusAsync_GravaHistoricoComOrigemUsuario()
-    {
-        var (c, v) = await SeedClienteVeiculoAsync();
-        var os = await SeedOrdemAsync(c.Id, v.Id);
-
-        await _useCases.AvancarStatusAsync(os.Id, new UpdateStatusDto(StatusOrdemServico.EmDiagnostico));
-
+        Assert.Equal(StatusOrdemServico.Entregue, result.Data!.Status);
+        Assert.NotNull(result.Data.DataEntrega);
         var historico = await _db.HistoricoStatus.AsNoTracking().SingleAsync(h => h.OrdemServicoId == os.Id);
-        Assert.Equal(StatusOrdemServico.Recebida, historico.StatusAnterior);
-        Assert.Equal(StatusOrdemServico.EmDiagnostico, historico.StatusNovo);
+        Assert.Equal(StatusOrdemServico.Finalizada, historico.StatusAnterior);
         Assert.Equal(OrigemMudancaStatus.Usuario, historico.Origem);
-        Assert.Equal(os.CorrelationId, historico.CorrelationId);
+        Assert.Contains(_notificador.Notificacoes,
+            n => n.Anterior == StatusOrdemServico.Finalizada && n.Novo == StatusOrdemServico.Entregue);
     }
 
-    // ────── AprovarOrcamentoAsync ──────
+    [Theory]
+    [InlineData(StatusOrdemServico.Recebida)]
+    [InlineData(StatusOrdemServico.EmExecucao)]
+    [InlineData(StatusOrdemServico.Entregue)]
+    [InlineData(StatusOrdemServico.Cancelada)]
+    public async Task EntregarAsync_OsNaoFinalizada_RetornaBadRequest(StatusOrdemServico status)
+    {
+        var (c, v) = await SeedClienteVeiculoAsync();
+        var os = await SeedOrdemAsync(c.Id, v.Id, status);
+
+        var result = await _useCases.EntregarAsync(os.Id);
+
+        Assert.Equal(400, result.StatusCode);
+        Assert.Empty(_notificador.Notificacoes);
+    }
 
     [Fact]
-    public async Task AprovarOrcamentoAsync_DefineFlagEDataCorretamente()
+    public async Task EntregarAsync_OsInexistente_RetornaNotFound()
+    {
+        var result = await _useCases.EntregarAsync(9999);
+
+        Assert.Equal(404, result.StatusCode);
+    }
+
+    // ────── ListarHistoricoAsync ──────
+
+    [Fact]
+    public async Task ListarHistoricoAsync_RetornaAsTransicoesEmOrdemComOrigemEMotivo()
+    {
+        var (c, v) = await SeedClienteVeiculoAsync();
+        var os = await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.EmExecucao);
+        var ordem = await _db.OrdensServico.SingleAsync(o => o.Id == os.Id);
+        ordem.MudarStatus(StatusOrdemServico.Finalizada, OrigemMudancaStatus.Saga, "Execução finalizada", DateTime.UtcNow.AddMinutes(-5));
+        ordem.MudarStatus(StatusOrdemServico.Entregue, OrigemMudancaStatus.Usuario, "Entregue ao cliente", DateTime.UtcNow);
+        await _db.SaveChangesAsync();
+
+        var result = await _useCases.ListarHistoricoAsync(os.Id);
+
+        Assert.True(result.Success);
+        Assert.Collection(result.Data!,
+            h =>
+            {
+                Assert.Equal(("EmExecucao", "Finalizada", "Saga"), (h.StatusAnterior, h.StatusNovo, h.Origem));
+                Assert.Equal("Execução finalizada", h.Motivo);
+            },
+            h => Assert.Equal(("Finalizada", "Entregue", "Usuario"), (h.StatusAnterior, h.StatusNovo, h.Origem)));
+    }
+
+    [Fact]
+    public async Task ListarHistoricoAsync_OsInexistente_RetornaNotFound()
+    {
+        var result = await _useCases.ListarHistoricoAsync(9999);
+
+        Assert.Equal(404, result.StatusCode);
+    }
+
+    // ────── CancelarAsync ──────
+
+    [Fact]
+    public async Task CancelarAsync_PublicaCancelamentoSolicitadoParaASaga()
     {
         var (c, v) = await SeedClienteVeiculoAsync();
         var os = await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.AguardandoAprovacao);
 
-        var result = await _useCases.AprovarOrcamentoAsync(os.Id, new AprovarOrcamentoDto(true));
+        var result = await _useCases.CancelarAsync(os.Id, "  Cliente desistiu  ", "atendente");
 
         Assert.True(result.Success);
-        Assert.True(result.Data!.OrcamentoAprovado);
-        Assert.NotNull(result.Data.DataAprovacaoOrcamento);
+        var evento = Assert.IsType<CancelamentoSolicitado>(Assert.Single(_publicador.Publicados));
+        Assert.Equal(os.CorrelationId, evento.CorrelationId);
+        Assert.Equal(os.Id, evento.OsId);
+        Assert.Equal("Cliente desistiu", evento.Motivo);
+        Assert.Equal("atendente", evento.SolicitadoPor);
+        // Quem cancela é a saga: o status ainda não mudou.
+        Assert.Equal(StatusOrdemServico.AguardandoAprovacao,
+            (await _db.OrdensServico.AsNoTracking().SingleAsync(o => o.Id == os.Id)).Status);
     }
 
     [Fact]
-    public async Task AprovarOrcamentoAsync_StatusIncorreto_RetornaErro()
+    public async Task CancelarAsync_SemMotivo_UsaMotivoPadrao()
     {
         var (c, v) = await SeedClienteVeiculoAsync();
-        var os = await SeedOrdemAsync(c.Id, v.Id, StatusOrdemServico.Recebida);
+        var os = await SeedOrdemAsync(c.Id, v.Id);
 
-        var result = await _useCases.AprovarOrcamentoAsync(os.Id, new AprovarOrcamentoDto(true));
+        var result = await _useCases.CancelarAsync(os.Id, null, "atendente");
 
-        Assert.False(result.Success);
-        Assert.Equal(400, result.StatusCode);
+        Assert.Equal("Cancelamento solicitado", result.Data!.Motivo);
+    }
+
+    [Theory]
+    [InlineData(StatusOrdemServico.EmExecucao)]
+    [InlineData(StatusOrdemServico.Finalizada)]
+    [InlineData(StatusOrdemServico.Entregue)]
+    [InlineData(StatusOrdemServico.Cancelada)]
+    public async Task CancelarAsync_EmExecucaoOuEncerrada_RetornaConflictSemPublicar(StatusOrdemServico status)
+    {
+        var (c, v) = await SeedClienteVeiculoAsync();
+        var os = await SeedOrdemAsync(c.Id, v.Id, status);
+
+        var result = await _useCases.CancelarAsync(os.Id, "teste", "atendente");
+
+        Assert.Equal(409, result.StatusCode);
+        Assert.Empty(_publicador.Publicados);
+    }
+
+    [Fact]
+    public async Task CancelarAsync_OsInexistente_RetornaNotFound()
+    {
+        var result = await _useCases.CancelarAsync(9999, null, "atendente");
+
+        Assert.Equal(404, result.StatusCode);
     }
 
     // ────── AdicionarItemAsync ──────

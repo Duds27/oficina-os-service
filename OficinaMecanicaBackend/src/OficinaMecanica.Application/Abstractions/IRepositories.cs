@@ -8,6 +8,7 @@ public interface IClienteRepository
     Task<Cliente?> ObterAsync(int id, bool tracking = false, CancellationToken ct = default);
     Task<bool> ExisteAsync(int id, CancellationToken ct = default);
     Task<bool> ExistePorCpfCnpjAsync(string cpfCnpj, CancellationToken ct = default);
+    Task<Cliente?> ObterPorCpfCnpjAsync(string cpfCnpj, CancellationToken ct = default);
     Task AdicionarAsync(Cliente cliente, CancellationToken ct = default);
     void Remover(Cliente cliente);
 }
@@ -49,6 +50,7 @@ public interface IOrdemServicoRepository
     Task<bool> ExistePorClienteAsync(int clienteId, CancellationToken ct = default);
     Task<string?> UltimoNumeroOSAsync(string prefixo, CancellationToken ct = default);
     Task<IReadOnlyList<OrdemServico>> ListarFinalizadasComExecucaoAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<HistoricoStatusOS>> ListarHistoricoAsync(int ordemServicoId, CancellationToken ct = default);
     Task AdicionarAsync(OrdemServico ordem, CancellationToken ct = default);
     Task AdicionarItemAsync(ItemOrdemServico item, CancellationToken ct = default);
     void RemoverItem(ItemOrdemServico item);
