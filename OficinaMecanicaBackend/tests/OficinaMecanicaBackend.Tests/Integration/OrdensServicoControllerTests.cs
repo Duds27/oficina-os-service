@@ -283,8 +283,7 @@ public class OrdensServicoControllerTests : IClassFixture<CustomWebApplicationFa
         var os = await osResp.Content.ReadFromJsonAsync<OrdemServicoNumeroResult>();
 
         // O evento sai do OutboxMessage (MySQL) depois do commit e chega ao bus.
-        Assert.True(await _harness.Published.Any<OrdemServicoAberta>(
-            m => m.Context.Message.OsId == os!.Id && m.Context.Message.NumeroOS == os.NumeroOS));
+        await _harness.EsperarPublicadaAsync<OrdemServicoAberta>(m => m.OsId == os!.Id && m.NumeroOS == os.NumeroOS);
     }
 
     // ── DTOs para deserialização ──

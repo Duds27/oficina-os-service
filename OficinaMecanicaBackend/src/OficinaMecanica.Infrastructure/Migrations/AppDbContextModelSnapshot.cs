@@ -190,6 +190,64 @@ namespace OficinaMecanica.Infrastructure.Migrations
                     b.ToTable("OutboxState");
                 });
 
+            modelBuilder.Entity("OficinaMecanica.Application.Saga.OrdemServicoSagaState", b =>
+                {
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("AtualizadoEm")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("CriadoEm")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CurrentState")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("LinkPagamento")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("MotivoCancelamento")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("NumeroOS")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<Guid?>("OrcamentoId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("OsId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("PagamentoId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("PrazoExpiraEm")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("CorrelationId");
+
+                    b.HasIndex("OsId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_SagaOrdemServico_OsId");
+
+                    b.HasIndex("PrazoExpiraEm")
+                        .HasDatabaseName("IX_SagaOrdemServico_PrazoExpiraEm");
+
+                    b.ToTable("SagaOrdemServico", (string)null);
+                });
+
             modelBuilder.Entity("OficinaMecanica.Domain.Entities.Cliente", b =>
                 {
                     b.Property<int>("Id")

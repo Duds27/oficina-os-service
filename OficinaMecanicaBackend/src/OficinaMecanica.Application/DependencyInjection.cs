@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using OficinaMecanica.Application.Saga;
 using OficinaMecanica.Application.Services;
 using OficinaMecanica.Application.UseCases;
 
@@ -15,6 +16,7 @@ public static class DependencyInjection
         services.AddScoped<OrdemServicoUseCases>();
         services.AddScoped<AutenticarUseCase>();
         services.AddScoped<EstoqueService>();
+        services.AddScoped<IOperacoesOsSaga, OperacoesOsSaga>();
         return services;
     }
 }

@@ -2,7 +2,9 @@ using MassTransit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Oficina.Contracts;
 using OficinaMecanica.Application.Abstractions;
+using OficinaMecanica.Application.Saga;
 using OficinaMecanica.Domain.Exceptions;
 using OficinaMecanica.Infrastructure.Data;
 
@@ -18,9 +20,21 @@ public static class MensageriaExtensions
     {
         services.AddScoped<IPublicadorEventos, MassTransitPublicadorEventos>();
 
+        // Prazos da saga e o verificador que publica PrazoExpirado.
+        services.Configure<PrazosSagaOptions>(configuration.GetSection(PrazosSagaOptions.Secao));
+        services.Configure<VerificadorPrazosSagaOptions>(configuration.GetSection(VerificadorPrazosSagaOptions.Secao));
+        services.AddSingleton<VerificadorPrazosSaga>();
+        services.AddHostedService<VerificadorPrazosSagaHostedService>();
+
         services.AddMassTransit(x =>
         {
             x.SetKebabCaseEndpointNameFormatter();
+
+            // Saga orquestrada da OS, persistida no MySQL com concorrência otimista, no
+            // mesmo AppDbContext da OS: estado da saga e mudanças na OS na mesma transação.
+            x.AddSagaStateMachine<OrdemServicoStateMachine, OrdemServicoSagaState>()
+                .UsarRepositorioMySql()
+                .Endpoint(e => e.Name = FilasOs.Saga);
 
             // Publicações fora de um consumidor (ex.: abertura da OS na API) vão para a
             // tabela OutboxMessage na mesma transação e saem depois do commit.
@@ -70,4 +84,18 @@ public static class MensageriaExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Repositório da saga no AppDbContext (MySQL), com concorrência otimista pelo RowVersion.
+    /// Público para os testes de integração: o test harness do MassTransit troca os
+    /// repositórios de saga por memória, e os testes registram este de volta.
+    /// </summary>
+    public static ISagaRegistrationConfigurator<OrdemServicoSagaState> UsarRepositorioMySql(
+        this ISagaRegistrationConfigurator<OrdemServicoSagaState> saga) =>
+        saga.EntityFrameworkRepository(r =>
+        {
+            r.ConcurrencyMode = ConcurrencyMode.Optimistic;
+            r.ExistingDbContext<AppDbContext>();
+            r.UseMySql();
+        });
 }

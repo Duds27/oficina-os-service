@@ -9,7 +9,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using OficinaMecanica.Application.Saga;
 using OficinaMecanica.Infrastructure.Data;
+using OficinaMecanica.Infrastructure.Messaging;
 using Testcontainers.MySql;
 using Xunit;
 
@@ -33,12 +35,21 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         .WithPassword("oficina_pwd")
         .Build();
 
-    public Task InitializeAsync() => _mySql.StartAsync();
+    /// <summary>
+    /// Com true (padrão), o RabbitMQ é trocado pelo transporte em memória do test harness.
+    /// <see cref="RabbitMqWebApplicationFactory"/> desliga para usar um broker real.
+    /// </summary>
+    protected virtual bool UsarTransporteEmMemoria => true;
+
+    public virtual Task InitializeAsync() => _mySql.StartAsync();
+
+    protected virtual Task PararContainersExtrasAsync() => Task.CompletedTask;
 
     async Task IAsyncLifetime.DisposeAsync()
     {
-        await _mySql.DisposeAsync();
         await base.DisposeAsync();
+        await PararContainersExtrasAsync();
+        await _mySql.DisposeAsync();
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -98,10 +109,19 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
                 });
         });
 
-        // Troca o RabbitMQ pelo transporte em memória do MassTransit, mantendo a saga,
-        // o outbox e o inbox no MySQL. Os testes leem o que foi publicado/enviado pelo
-        // ITestHarness. O teste com RabbitMQ real fica em MensageriaRabbitMqTests.
-        builder.ConfigureTestServices(services => services.AddMassTransitTestHarness());
+        // Troca o RabbitMQ pelo transporte em memória do MassTransit, mantendo o outbox e o
+        // inbox no MySQL. Os testes leem o que foi publicado/consumido pelo ITestHarness.
+        // O teste com RabbitMQ real fica em MensageriaRabbitMqTests.
+        if (!UsarTransporteEmMemoria)
+            return;
+
+        builder.ConfigureTestServices(services => services.AddMassTransitTestHarness(x =>
+        {
+            // O harness troca os repositórios de saga por memória; a saga volta para o MySQL.
+            x.AddSagaRepository<OrdemServicoSagaState>().UsarRepositorioMySql();
+            // Filas do billing e do execution simuladas: só registram os comandos.
+            x.AddCapturaDeComandos();
+        }));
     }
 
     public static async Task<string> GetAuthTokenAsync(HttpClient client)

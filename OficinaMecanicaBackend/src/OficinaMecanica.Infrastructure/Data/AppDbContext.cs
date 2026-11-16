@@ -27,6 +27,9 @@ public class AppDbContext : DbContext
         modelBuilder.AddOutboxMessageEntity();
         modelBuilder.AddOutboxStateEntity();
 
+        // Estado da saga da OS, na mesma transação da OS e do outbox.
+        new OrdemServicoSagaStateMap().Configure(modelBuilder);
+
         modelBuilder.Entity<Cliente>(e =>
         {
             e.Property(c => c.CpfCnpj).HasMaxLength(20).IsRequired();
