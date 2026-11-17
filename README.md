@@ -249,6 +249,39 @@ docker-compose up --build
 A API ficará disponível em `http://localhost:8080`.  
 O Swagger UI estará em `http://localhost:8080/swagger`.
 
+### Sistema completo (os 3 microsserviços)
+
+O `docker-compose.full.yml`, na raiz deste repositório, sobe o os-service, o billing-service, o
+execution-service, o RabbitMQ, o MySQL, o PostgreSQL e o DynamoDB Local. Ele pressupõe os
+repositórios `oficina-billing-service` e `oficina-execution-service` clonados ao lado deste. Em
+outro lugar, use `BILLING_DIR` e `EXECUTION_DIR`.
+
+```bash
+docker compose -f docker-compose.full.yml up --build -d --wait
+docker compose -f docker-compose.full.yml --profile seed run --rm seed   # ou: python scripts/seed.py
+python scripts/e2e_saga.py                                               # saga de ponta a ponta
+docker compose -f docker-compose.full.yml down -v
+```
+
+| Serviço | Porta no host |
+| --- | --- |
+| os-service | `8080` (Swagger em `/swagger`) |
+| billing-service | `8082` |
+| execution-service | `8083` |
+| RabbitMQ | `5672`; UI em `15672` (`oficina` / `oficina_dev`) |
+| MySQL, PostgreSQL, DynamoDB Local | `3307`, `5433`, `8000` |
+
+- **Seed** (`scripts/seed.py`, só biblioteca padrão do Python): três serviços, três peças com
+  estoque, dois clientes com e-mail e um veículo para cada. Rodar de novo não duplica nada.
+- **Saga** (`scripts/e2e_saga.py`): abre uma OS e percorre diagnóstico, orçamento, aprovação,
+  pagamento simulado (gateway Fake) e execução até `Concluida`, conferindo os 13 passos. O
+  workflow manual `e2e.yml` faz o mesmo no GitHub Actions.
+- **Prazos** da saga e do orçamento: `PRAZO` (padrão 10 min). Use `PRAZO=00:02:00` para ver as
+  compensações por timeout.
+- O nome do projeto é fixo (`oficina-full`), então os volumes não se misturam com os do
+  `docker-compose.yml` do `OficinaMecanicaBackend`.
+- Validado em 2026-11-16: build do zero, seed e saga completa (13 de 13).
+
 ### Localmente (sem Docker)
 
 1. Garanta que um MySQL 8.4 está rodando e ajuste a connection string em `appsettings.json`.

@@ -1,0 +1,56 @@
+name: E2E
+
+# Manual: sobe o docker-compose.full.yml no runner (os 3 serviços, RabbitMQ e os 3 bancos),
+# roda o seed e a saga de ponta a ponta (scripts/e2e_saga.py), da abertura da OS até Concluida.
+on:
+  workflow_dispatch:
+    inputs:
+      billing_ref:
+        description: Branch, tag ou commit do oficina-billing-service
+        default: main
+      execution_ref:
+        description: Branch, tag ou commit do oficina-execution-service
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Saga de ponta a ponta (compose)
+    runs-on: ubuntu-latest
+    env:
+      # Os outros dois repositórios ficam dentro do workspace, não ao lado.
+      BILLING_DIR: ./_repos/oficina-billing-service
+      EXECUTION_DIR: ./_repos/oficina-execution-service
+    steps:
+      - name: Checkout (os-service)
+        uses: actions/checkout@v4
+
+      - name: Checkout (billing-service)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/oficina-billing-service
+          ref: ${{ inputs.billing_ref }}
+          path: _repos/oficina-billing-service
+
+      - name: Checkout (execution-service)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/oficina-execution-service
+          ref: ${{ inputs.execution_ref }}
+          path: _repos/oficina-execution-service
+
+      - name: Subir o sistema
+        run: docker compose -f docker-compose.full.yml up --build -d --wait --wait-timeout 300
+
+      - name: Seed + saga
+        run: python3 scripts/e2e_saga.py
+
+      - name: Logs
+        if: failure()
+        run: docker compose -f docker-compose.full.yml logs --no-color --tail=200
+
+      - name: Derrubar
+        if: always()
+        run: docker compose -f docker-compose.full.yml down -v
