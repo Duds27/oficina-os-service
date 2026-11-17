@@ -1,0 +1,167 @@
+# Sistema completo da Fase 4: os 3 microsserviços, o RabbitMQ e os 3 bancos numa máquina só.
+#
+# Pressupõe os 3 repositórios clonados lado a lado (a pasta deste pode ter outro nome):
+#   oficina/
+#   ├── oficina-os-service/          (este compose)
+#   ├── oficina-billing-service/
+#   └── oficina-execution-service/
+# Em outro lugar, aponte BILLING_DIR e EXECUTION_DIR para as pastas dos outros dois.
+#
+#   docker compose -f docker-compose.full.yml up --build -d
+#   docker compose -f docker-compose.full.yml --profile seed run --rm seed
+#   docker compose -f docker-compose.full.yml down -v       # apaga também os volumes
+#
+# Portas no host: os-service 8080, billing 8082, execution 8083, RabbitMQ 5672 e 15672
+# (UI: oficina / oficina_dev), MySQL 3307, PostgreSQL 5433 e DynamoDB Local 8000. MySQL e
+# PostgreSQL ficam em portas diferentes das dos composes de cada serviço, para os dois
+# poderem subir juntos.
+#
+# Pagamento: gateway Fake. Para simular, use
+#   POST http://localhost:8082/dev/pagamentos/{id}/simular?resultado=aprovado
+# Prazos da saga e do orçamento: PRAZO (padrão 10 min). Use PRAZO=00:02:00 para ver as
+# compensações por timeout.
+name: oficina-full
+
+x-rabbitmq-env: &rabbitmq-env
+  RabbitMq__Host: rabbitmq
+  RabbitMq__VirtualHost: oficina
+  RabbitMq__Username: oficina
+  RabbitMq__Password: oficina_dev
+
+x-jwt-env: &jwt-env
+  # Mesma chave nos 3: os tokens emitidos pelo os-service (equipe) valem no billing e no execution.
+  Jwt__Key: OficinaMecanicaSecretKeyMustBe32CharactersMin!
+
+services:
+  os-service:
+    build: ./OficinaMecanicaBackend
+    image: oficina-os-service:full
+    ports:
+      - "8080:8080"
+    environment:
+      <<: [*rabbitmq-env, *jwt-env]
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: Server=mysql;Port=3306;Database=OficinaMecanica;User=root;Password=Your_password123;
+      InternalApi__Key: dev-internal-key-troque-em-producao
+      Saga__Prazos__Aprovacao: ${PRAZO:-00:10:00}
+      Saga__Prazos__Pagamento: ${PRAZO:-00:10:00}
+      Saga__Prazos__Execucao: ${PRAZO:-00:10:00}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: on-failure
+
+  billing-service:
+    build: ${BILLING_DIR:-../oficina-billing-service}
+    image: oficina-billing-service:full
+    ports:
+      - "8082:8080"
+    environment:
+      <<: [*rabbitmq-env, *jwt-env]
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__BillingDb: Host=postgres;Port=5432;Database=billing;Username=billing;Password=billing_dev
+      Pagamentos__Gateway: Fake
+      Orcamento__UrlAprovacao: http://localhost:8082/api/orcamentos/{0}
+      Orcamento__Validade: ${PRAZO:-00:10:00}
+      Pagamentos__PrazoPagamento: ${PRAZO:-00:10:00}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: on-failure
+
+  execution-service:
+    build: ${EXECUTION_DIR:-../oficina-execution-service}
+    image: oficina-execution-service:full
+    ports:
+      - "8083:8080"
+    environment:
+      <<: [*rabbitmq-env, *jwt-env]
+      ASPNETCORE_ENVIRONMENT: Development
+      DynamoDb__ServiceUrl: http://dynamodb:8000
+      DynamoDb__TableName: oficina-execucoes
+      # Credenciais fictícias: o DynamoDB Local não valida, mas o AWS SDK exige algum valor.
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      FaultInjection__RejeitarExecucao: "false"
+    depends_on:
+      dynamodb:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    restart: on-failure
+
+  rabbitmq:
+    # Mesma imagem dos composes e do EKS, validada com o MassTransit 8.4.1 no spike S1.
+    image: rabbitmq:4.1-management
+    environment:
+      RABBITMQ_DEFAULT_USER: oficina
+      RABBITMQ_DEFAULT_PASS: oficina_dev
+      RABBITMQ_DEFAULT_VHOST: oficina
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: Your_password123
+      MYSQL_DATABASE: OficinaMecanica
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      # Ping por TCP: durante o boot o MySQL sobe um servidor temporário só por socket.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "3306", "--protocol=tcp", "-uroot", "-pYour_password123"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: billing
+      POSTGRES_USER: billing
+      POSTGRES_PASSWORD: billing_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U billing -d billing"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  dynamodb:
+    image: amazon/dynamodb-local:2.6.1
+    # -sharedDb: um banco só, independente da região e das credenciais. Em memória: some no restart.
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    ports:
+      - "8000:8000"
+
+  # Dados de exemplo (serviços, peças, clientes e veículos). Só sobe com --profile seed.
+  seed:
+    profiles: ["seed"]
+    image: python:3.12-alpine
+    volumes:
+      - ./scripts:/scripts:ro
+    command: ["python", "/scripts/seed.py", "--url", "http://os-service:8080"]
+    depends_on:
+      os-service:
+        condition: service_started
+
+volumes:
+  mysql_data:
+  postgres_data:

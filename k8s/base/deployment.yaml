@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: os-service
+  labels:
+    app: os-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: os-service
+  template:
+    metadata:
+      labels:
+        app: os-service
+    spec:
+      serviceAccountName: os-service
+      # preStop (10 s) + parada do host .NET (até 30 s), com folga. Nesse tempo o pod sai do
+      # target group do NLB e os consumers do MassTransit terminam a mensagem em andamento.
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654 # usuário "app" das imagens mcr.microsoft.com/dotnet/aspnet
+        runAsGroup: 1654
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: os-service
+          # Trocada por overlay: imagem local no kind, ECR na AWS (kustomize edit set image no CD).
+          image: oficina-os-service
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: os-service-config
+            - secretRef:
+                name: os-service-secrets
+          resources:
+            # O HPA calcula a utilização sobre os requests.
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # Até 3 min para subir: o os-service aplica as migrations antes de abrir a porta e
+          # espera o banco (no kind, o MySQL leva perto de 1 min no primeiro boot). Enquanto
+          # isso, o liveness não roda e não derruba o pod.
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              # Dá tempo ao Service e ao NLB de pararem de mandar requisições antes do SIGTERM.
+              exec:
+                command: ["sleep", "10"]

@@ -20,5 +20,5 @@ output "endpoint" {
 
 output "acesso_api" {
   description = "Como acessar a API após o deploy."
-  value       = "kubectl -n oficina port-forward svc/api 8080:80  =>  http://localhost:8080/swagger"
+  value       = "kubectl -n oficina-os port-forward svc/os-service 8080:80  =>  http://localhost:8080/swagger"
 }

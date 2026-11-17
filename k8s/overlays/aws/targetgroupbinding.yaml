@@ -1,16 +1,14 @@
-# Registra os pods do Service `api` como alvos IP do NLB interno provisionado pelo
-# repo infra-k8s (output app_target_group_arn). O AWS Load Balancer Controller
-# reconcilia os endpoints. O pipeline substitui arn:aws:elasticloadbalancing:us-east-1:411918631457:targetgroup/oficina-homolog-app-tg/b4c6d0d9d32e9e92 pelo ARN real.
+# Registra os pods do Service os-service como alvos IP do target group do serviço no NLB interno
+# (oficina-infra-k8s). Quem reconcilia é o AWS Load Balancer Controller.
 apiVersion: elbv2.k8s.aws/v1beta1
 kind: TargetGroupBinding
 metadata:
-  name: api-tgb
-  namespace: oficina
+  name: os-service
   labels:
-    app.kubernetes.io/part-of: oficina-mecanica
+    app: os-service
 spec:
   serviceRef:
-    name: api
+    name: os-service
     port: 80
   targetType: ip
-  targetGroupARN: arn:aws:elasticloadbalancing:us-east-1:411918631457:targetgroup/oficina-homolog-app-tg/b4c6d0d9d32e9e92
+  targetGroupARN: "__TARGET_GROUP_ARN__"

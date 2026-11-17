@@ -1,13 +1,50 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Overlay LOCAL / kind (desenvolvimento): MySQL in-cluster (StatefulSet) e
-# ConfigMap/Secret de exemplo. Aplique com: kubectl apply -k k8s/overlays/local
-namespace: oficina
-
+# Overlay LOCAL (kind): imagem local, Secret de desenvolvimento e o banco no próprio cluster.
+#   docker build -t oficina-os-service:local .
+#   kind load docker-image oficina-os-service:local --name <cluster>
+#   kubectl apply -k k8s/overlays/local
+#
+# Sem "namespace:" aqui: a base já põe os recursos dela em oficina-os, e os daqui dizem o seu.
 resources:
   - ../../base
-  - 10-configmap.yaml
-  - 11-secret.yaml
-  - 20-mysql.yaml
-  - 25-rabbitmq.yaml
+  - namespace.yaml
+  - secret.yaml
+  - mysql.yaml
+  - rabbitmq.yaml
+
+images:
+  - name: oficina-os-service
+    newTag: local
+
+patches:
+  # 1 réplica no kind; o HPA da base continua (2 a 5) para a demonstração de escala.
+  - target:
+      kind: Deployment
+      name: os-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: os-service
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+  - target:
+      kind: ConfigMap
+      name: os-service-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: os-service-config
+      data:
+        ASPNETCORE_ENVIRONMENT: "Development"
+        # Prazos curtos, como no compose, para ver as compensações por timeout.
+        Saga__Prazos__Aprovacao: "00:02:00"
+        Saga__Prazos__Pagamento: "00:02:00"
+        Saga__Prazos__Execucao: "00:02:00"

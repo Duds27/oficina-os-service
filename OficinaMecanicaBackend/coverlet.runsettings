@@ -10,7 +10,8 @@
     <DataCollectors>
       <DataCollector friendlyName="XPlat code coverage">
         <Configuration>
-          <Format>cobertura</Format>
+          <!-- cobertura: ReportGenerator (gate de 80%); opencover: SonarCloud. -->
+          <Format>cobertura,opencover</Format>
           <Include>[OficinaMecanica.*]*</Include>
           <Exclude>[OficinaMecanica.BddTests]*</Exclude>
           <ExcludeByFile>**/Migrations/*.cs,**/Program.cs,**/DTOs/**/*.cs</ExcludeByFile>

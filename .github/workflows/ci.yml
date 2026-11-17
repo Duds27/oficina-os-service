@@ -1,43 +1,123 @@
 name: CI
 
+# Roda em PR e push na main, e é reutilizado pelo CD (workflow_call).
+# O job build-test-quality é o "required check" da proteção da main. Ele falha com:
+#   - teste vermelho;
+#   - cobertura de linhas abaixo de 80% (ReportGenerator, todos os projetos de teste juntos);
+#   - quality gate do SonarCloud reprovado (sonar.qualitygate.wait).
 on:
-  push:
-    branches: [ main ]
   pull_request:
     branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_call:
+    secrets:
+      SONAR_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  SONAR_ORGANIZATION: duds27
+  SONAR_PROJECT_KEY: Duds27_oficina-os-service
+  COBERTURA_MINIMA: 80
+  # As mesmas exclusões do coverlet.runsettings. Migrations são código gerado e saem da
+  # análise toda; Program.cs (composição) e DTOs (só dados) saem só da cobertura.
+  SONAR_EXCLUSIONS: "**/Migrations/**"
+  SONAR_COVERAGE_EXCLUSIONS: "**/Migrations/**,**/*.Designer.cs,**/Program.cs,**/DTOs/**"
 
 jobs:
-  build-test:
-    name: Build e Testes
+  build-test-quality:
+    name: build-test-quality
     runs-on: ubuntu-latest
+    env:
+      # Vazio em PR de fork e do Dependabot: os passos do Sonar são pulados.
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    defaults:
+      run:
+        working-directory: OficinaMecanicaBackend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # o Sonar usa o histórico (blame e código novo)
 
-      - name: Setup .NET 8
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: "8.0.x"
+
+      - name: Setup Java (SonarScanner)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Ferramentas
+        run: |
+          dotnet tool install --global dotnet-sonarscanner --version 11.3.0
+          dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.12
+
+      - name: SonarCloud (begin)
+        if: env.SONAR_TOKEN != ''
+        run: >
+          dotnet sonarscanner begin
+          /k:"${SONAR_PROJECT_KEY}" /o:"${SONAR_ORGANIZATION}"
+          /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.token="${SONAR_TOKEN}"
+          /d:sonar.cs.opencover.reportsPaths="TestResults/**/coverage.opencover.xml"
+          /d:sonar.exclusions="${SONAR_EXCLUSIONS}"
+          /d:sonar.coverage.exclusions="${SONAR_COVERAGE_EXCLUSIONS}"
+          /d:sonar.qualitygate.wait=true
+          /d:sonar.qualitygate.timeout=300
 
       - name: Restore
-        run: dotnet restore OficinaMecanicaBackend/OficinaMecanicaBackend.sln
+        run: dotnet restore OficinaMecanicaBackend.sln
 
       - name: Build
-        run: dotnet build OficinaMecanicaBackend/OficinaMecanicaBackend.sln -c Release --no-restore
+        run: dotnet build OficinaMecanicaBackend.sln -c Release --no-restore
 
-      # Os testes de integração sobem MySQL e RabbitMQ via Testcontainers; o runner
-      # ubuntu-latest já possui Docker disponível. A cobertura usa as exclusões
-      # documentadas em coverlet.runsettings (Migrations, Program.cs, DTOs).
-      - name: Test (unitários + saga + integração + BDD)
+      # O coverlet.runsettings gera a cobertura em dois formatos: cobertura (ReportGenerator)
+      # e opencover (Sonar).
+      # Os testes de integração e BDD sobem MySQL e RabbitMQ via Testcontainers.
+      - name: Test
         run: >
-          dotnet test OficinaMecanicaBackend/OficinaMecanicaBackend.sln
-          -c Release --no-build --verbosity normal
-          --settings OficinaMecanicaBackend/coverlet.runsettings
+          dotnet test OficinaMecanicaBackend.sln -c Release --no-build
+          --collect:"XPlat Code Coverage"
+          --settings coverlet.runsettings
+          --results-directory TestResults
+
+      - name: Relatório de cobertura
+        if: always()
+        run: |
+          reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:coverage-report \
+            -reporttypes:"Cobertura;MarkdownSummaryGithub;TextSummary"
+          cat coverage-report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: SonarCloud (end + quality gate)
+        if: env.SONAR_TOKEN != ''
+        run: dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
+
+      - name: Cobertura mínima
+        run: |
+          taxa=$(sed -n 's/.*<coverage[^>]* line-rate="\([0-9.]*\)".*/\1/p' coverage-report/Cobertura.xml | head -1)
+          pct=$(awk -v t="$taxa" 'BEGIN { printf "%.1f", t * 100 }')
+          echo "Cobertura de linhas: ${pct}% (mínimo ${COBERTURA_MINIMA}%)"
+          if ! awk -v p="$pct" -v m="$COBERTURA_MINIMA" 'BEGIN { exit !(p >= m) }'; then
+            echo "::error::Cobertura de linhas ${pct}% abaixo do mínimo de ${COBERTURA_MINIMA}%."
+            exit 1
+          fi
 
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: '**/TestResults/**/coverage.cobertura.xml'
+          path: |
+            OficinaMecanicaBackend/coverage-report/
+            OficinaMecanicaBackend/TestResults/**/coverage.cobertura.xml
           if-no-files-found: ignore
+
+      - name: Docker build
+        run: docker build -t oficina-os-service:ci .

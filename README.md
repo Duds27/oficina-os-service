@@ -1,5 +1,7 @@
 # Tech Challenge FIAP — Oficina Mecânica Backend
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=Duds27_oficina-os-service&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Duds27_oficina-os-service) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=Duds27_oficina-os-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=Duds27_oficina-os-service)
+
 API REST para gestão de uma oficina mecânica de médio porte, desenvolvida como Tech Challenge do curso de Software Architecture (15SOAT) da FIAP.
 
 ---
@@ -25,8 +27,9 @@ serverless, infraestrutura como código, CI/CD por repositório e observabilidad
 ### Deploy em produção (AWS/EKS)
 
 O app usa o overlay `k8s/overlays/aws` (RDS + NLB via TargetGroupBinding); o deploy é
-automático pelas branches `homolog`/`prod` (`.github/workflows/cd-aws.yml`). Detalhes e
-pré-requisitos: [docs/fase3-entrega.md](docs/fase3-entrega.md).
+automático pelas branches `homolog`/`prod` (`.github/workflows/cd.yml`, que na Fase 3 era o
+`cd-aws.yml`; veja a seção [CD](#cd)). Detalhes e pré-requisitos da Fase 3:
+[docs/fase3-entrega.md](docs/fase3-entrega.md).
 
 - 🚀 **Provisionar a infra na AWS (passo a passo):** [docs/aws-setup.md](docs/aws-setup.md).
 
@@ -54,7 +57,7 @@ escalabilidade**, incorporando práticas modernas de infraestrutura e automaçã
 | **Conteinerização**                                        | `Dockerfile` (multi-stage, usuário não-root) + `docker-compose.yml` para desenvolvimento local.                                                                                                                                                   |
 | **Kubernetes**                                             | Manifestos em [`/k8s`](k8s): Namespace, ConfigMap, Secret, MySQL (StatefulSet + PVC), API (Deployment + Service com probes) e **HPA**.                                                                                                            |
 | **IaC (Terraform)**                                        | Scripts em [`/infra`](infra) que provisionam um cluster **kind**, instalam o metrics-server, buildam/carregam a imagem e aplicam os manifestos.                                                                                                   |
-| **CI/CD**                                                  | GitHub Actions em [`.github/workflows`](.github/workflows): `ci.yml` (build + testes) e `cd.yml` (build/push da imagem + deploy num kind no runner).                                                                                              |
+| **CI/CD**                                                  | GitHub Actions em [`.github/workflows`](.github/workflows): `ci.yml` (build + testes) e `kind.yml` (deploy do overlay local num kind no runner; até a Fase 3 era o `cd.yml`, que também publicava a imagem no GHCR).                                                                                              |
 
 ### Arquitetura de infraestrutura
 
@@ -246,6 +249,39 @@ docker-compose up --build
 A API ficará disponível em `http://localhost:8080`.  
 O Swagger UI estará em `http://localhost:8080/swagger`.
 
+### Sistema completo (os 3 microsserviços)
+
+O `docker-compose.full.yml`, na raiz deste repositório, sobe o os-service, o billing-service, o
+execution-service, o RabbitMQ, o MySQL, o PostgreSQL e o DynamoDB Local. Ele pressupõe os
+repositórios `oficina-billing-service` e `oficina-execution-service` clonados ao lado deste. Em
+outro lugar, use `BILLING_DIR` e `EXECUTION_DIR`.
+
+```bash
+docker compose -f docker-compose.full.yml up --build -d --wait
+docker compose -f docker-compose.full.yml --profile seed run --rm seed   # ou: python scripts/seed.py
+python scripts/e2e_saga.py                                               # saga de ponta a ponta
+docker compose -f docker-compose.full.yml down -v
+```
+
+| Serviço | Porta no host |
+| --- | --- |
+| os-service | `8080` (Swagger em `/swagger`) |
+| billing-service | `8082` |
+| execution-service | `8083` |
+| RabbitMQ | `5672`; UI em `15672` (`oficina` / `oficina_dev`) |
+| MySQL, PostgreSQL, DynamoDB Local | `3307`, `5433`, `8000` |
+
+- **Seed** (`scripts/seed.py`, só biblioteca padrão do Python): três serviços, três peças com
+  estoque, dois clientes com e-mail e um veículo para cada. Rodar de novo não duplica nada.
+- **Saga** (`scripts/e2e_saga.py`): abre uma OS e percorre diagnóstico, orçamento, aprovação,
+  pagamento simulado (gateway Fake) e execução até `Concluida`, conferindo os 13 passos. O
+  workflow manual `e2e.yml` faz o mesmo no GitHub Actions.
+- **Prazos** da saga e do orçamento: `PRAZO` (padrão 10 min). Use `PRAZO=00:02:00` para ver as
+  compensações por timeout.
+- O nome do projeto é fixo (`oficina-full`), então os volumes não se misturam com os do
+  `docker-compose.yml` do `OficinaMecanicaBackend`.
+- Validado em 2026-11-16: build do zero, seed e saga completa (13 de 13).
+
 ### Localmente (sem Docker)
 
 1. Garanta que um MySQL 8.4 está rodando e ajuste a connection string em `appsettings.json`.
@@ -286,8 +322,8 @@ kubectl get nodes
 
 # 5. Build da imagem e carga no cluster kind
 cd <path_to_this_project> # precisa estar no root deste projeto
-docker build -t oficina-mecanica-api:local OficinaMecanicaBackend
-kind load docker-image oficina-mecanica-api:local --name oficina
+docker build -t oficina-os-service:local OficinaMecanicaBackend
+kind load docker-image oficina-os-service:local --name oficina
 
 # 6. Instal o metrics-server (necessário para o HPA)
 kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
@@ -296,12 +332,12 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 kubectl apply -k k8s/overlays/local
 
 # 8. Aguardar e verificar
-kubectl -n oficina rollout status statefulset/mysql
-kubectl -n oficina rollout status deploy/api
-kubectl -n oficina get pods,svc,hpa
+kubectl -n oficina-os rollout status statefulset/mysql
+kubectl -n oficina-os rollout status deploy/os-service
+kubectl -n oficina-os get pods,svc,hpa
 
 # 9. Acesso local a API
-kubectl -n oficina port-forward svc/api 8080:80   # http://localhost:8080/swagger
+kubectl -n oficina-os port-forward svc/os-service 8080:80   # http://localhost:8080/swagger
 
 # 10. Checar no browser
 http://localhost:8080/swagger
@@ -311,7 +347,7 @@ http://localhost:8080/health/ready
 kind delete cluster --name oficina
 ```
 
-Para observar a **escalabilidade automática**, gere carga contra o Service e acompanhe `kubectl -n oficina get hpa api -w`.
+Para observar a **escalabilidade automática**, gere carga contra o Service e acompanhe `kubectl -n oficina-os get hpa os-service -w`.
 
 ---
 
@@ -766,7 +802,45 @@ cd OficinaMecanicaBackend
 dotnet test --settings coverlet.runsettings
 ```
 
-Gera um `coverage.cobertura.xml` por projeto de teste em `tests/*/TestResults/`. Exclusões, configuradas em `coverlet.runsettings`: `Migrations/` (inclui os `*.Designer.cs`), `Program.cs` e `DTOs/`. Na Fase 4, a cobertura de linhas dos dois projetos juntos ficou em torno de 95%. O gate de 80% no CI entra na Etapa 4 (ReportGenerator + SonarCloud).
+Gera um `coverage.cobertura.xml` e um `coverage.opencover.xml` por projeto de teste em `tests/*/TestResults/`. Exclusões, configuradas em `coverlet.runsettings`: `Migrations/` (inclui os `*.Designer.cs`), `Program.cs` e `DTOs/`. Em 2026-11-16, a cobertura de linhas dos dois projetos juntos ficou em 95,5%, com 237 testes.
+
+### CI
+
+O `.github/workflows/ci.yml` roda em PR e push na `main`, e o CD o reutiliza (`workflow_call`). O job `build-test-quality` é o *required check* da `main`: restore, build, testes, SonarCloud, gate de cobertura e build da imagem Docker.
+
+- **Gate de cobertura:** o ReportGenerator junta a cobertura de todos os projetos de teste, e o passo falha se a de linhas ficar abaixo de 80%. O resumo vai para a página do run, e o relatório fica no artifact `coverage`.
+- **SonarCloud** (projeto `Duds27_oficina-os-service`): análise com `dotnet-sonarscanner`, cobertura em opencover e `sonar.qualitygate.wait=true`. Quality gate reprovado derruba o job. Em PR de fork ou do Dependabot, sem o `SONAR_TOKEN`, os passos do Sonar são pulados.
+- O Sonar usa as mesmas exclusões do `coverlet.runsettings`: as migrations saem da análise toda; `Program.cs` e `DTOs/` saem só da cobertura.
+- A análise local com SonarQube em Docker (seção abaixo) continua valendo para quem quiser rodar sem o CI.
+
+### CD
+
+O `.github/workflows/cd.yml` faz o deploy no EKS a cada push em `homolog` ou `prod`. Antes, chama o
+CI (`workflow_call`), e o deploy só roda se testes, cobertura e quality gate passarem no mesmo
+commit. O job usa o Environment com o nome da branch. Em `prod`, a aprovação fica nas
+regras do Environment.
+
+1. Confere as variables do Environment e para com a lista do que falta.
+2. Builda e publica a imagem no ECR com a tag do commit.
+3. Monta o Secret `os-service-secrets` a partir do Secrets Manager, com os valores mascarados no log. A senha do admin da equipe é opcional no secret do JWT (`{"key", "adminPassword"}`); sem ela, vale a do `appsettings.json`.
+4. Troca a imagem e os placeholders do overlay `aws`. Placeholder sem valor derruba o deploy antes do `apply`.
+5. `kubectl apply`, anota o pod com o hash do Secret (credencial trocada sem mudança de código também
+   reinicia os pods) e espera o rollout (300 s).
+6. Smoke test: um pod com `curl` chama `http://os-service/health/ready` dentro do namespace `oficina-os`.
+
+| Tipo (Environment `homolog`/`prod`) | Nome | De onde vem |
+| --- | --- | --- |
+| Variable | `AWS_REGION` | `us-east-1` |
+| Variable | `ECR_REPOSITORY` | repositório ECR do os-service (da Fase 3) |
+| Variable | `EKS_CLUSTER_NAME` | saída `cluster_name` do `oficina-infra-k8s` |
+| Variable | `TARGET_GROUP_ARN` | saída `target_group_arns["os"]` do `oficina-infra-k8s` |
+| Variable | `RABBITMQ_SECRET_ID` | saída `rabbitmq_secret_ids["os"]` do `oficina-infra-k8s` |
+| Variable | `JWT_SECRET_ID` | secret `{"key"}` da chave do JWT, o mesmo da Lambda |
+| Variable | `DB_SECRET_ID` | secret do MySQL do `oficina-infra-database` (`host`, `port`, `username`, `password`, `dbname`) |
+| Variable | `INTERNAL_KEY_SECRET_ID` | secret `{"key"}` da chave interna, o mesmo da Lambda |
+| Secret | `AWS_DEPLOY_ROLE_ARN` | role do GitHub OIDC (a mesma da Fase 3) |
+| Secret | `SONAR_TOKEN` | SonarCloud (já cadastrado na Etapa 0) |
+| Secret | `NEW_RELIC_LICENSE_KEY` | opcional; sem ela, o agente fica desligado |
 
 ---
 

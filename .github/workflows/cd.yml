@@ -1,66 +1,148 @@
 name: CD
 
+# Deploy no EKS a cada push em homolog ou prod. O job deploy só roda depois do CI (testes,
+# cobertura >= 80% e quality gate do SonarCloud) passar no mesmo commit. Em homolog não há
+# passo manual; em prod, o Environment exige aprovação (proteção da Etapa 4, 4.7).
 on:
   push:
-    branches: [ main ]
+    branches: [ homolog, prod ]
   workflow_dispatch:
 
 permissions:
+  id-token: write # OIDC → role AWS
   contents: read
-  packages: write
+
+concurrency:
+  group: cd-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
-    name: Build da imagem + Deploy no Kubernetes
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  deploy:
+    name: Deploy no EKS
+    needs: ci
     runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    env:
+      APP: os-service
+      NAMESPACE: oficina-os
+      IMAGEM_KUSTOMIZE: oficina-os-service
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+      TARGET_GROUP_ARN: ${{ vars.TARGET_GROUP_ARN }}
+      JWT_SECRET_ID: ${{ vars.JWT_SECRET_ID }}
+      RABBITMQ_SECRET_ID: ${{ vars.RABBITMQ_SECRET_ID }}
+      DB_SECRET_ID: ${{ vars.DB_SECRET_ID }}
+      INTERNAL_KEY_SECRET_ID: ${{ vars.INTERNAL_KEY_SECRET_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Definir nome da imagem (lowercase)
-        id: vars
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}/oficina-mecanica-api" >> "$GITHUB_OUTPUT"
+      - name: Conferir as variables do Environment
+        run: |
+          faltando=""
+          for v in AWS_REGION ECR_REPOSITORY EKS_CLUSTER_NAME TARGET_GROUP_ARN JWT_SECRET_ID RABBITMQ_SECRET_ID DB_SECRET_ID INTERNAL_KEY_SECRET_ID; do
+            [ -n "${!v}" ] || faltando="$faltando $v"
+          done
+          if [ -n "$faltando" ]; then
+            echo "::error::Variables sem valor no Environment ${{ github.ref_name }}:$faltando (veja o README, seção CD)."
+            exit 1
+          fi
 
-      - name: Login no GHCR
-        uses: docker/login-action@v3
+      - name: Configurar credenciais AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Build da imagem Docker
-        run: >
-          docker build
-          -t oficina-mecanica-api:local
-          -t ${{ steps.vars.outputs.image }}:latest
-          -t ${{ steps.vars.outputs.image }}:${{ github.sha }}
-          OficinaMecanicaBackend
+      - name: Login no ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Push para o GHCR
+      - name: Build e push da imagem
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          docker push ${{ steps.vars.outputs.image }}:latest
-          docker push ${{ steps.vars.outputs.image }}:${{ github.sha }}
+          IMAGEM="$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA"
+          docker build -t "$IMAGEM" OficinaMecanicaBackend
+          docker push "$IMAGEM"
+          echo "IMAGEM=$IMAGEM" >> "$GITHUB_ENV"
 
-      - name: Criar cluster kind
-        uses: helm/kind-action@v1
-        with:
-          cluster_name: oficina
+      - name: Configurar kubeconfig do EKS
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
 
-      - name: Carregar imagem no kind
-        run: kind load docker-image oficina-mecanica-api:local --name oficina
-
-      - name: Instalar metrics-server (necessário para o HPA)
+      # Os valores saem do Secrets Manager direto para o Secret do pod, mascarados no log.
+      - name: Secret do pod (Secrets Manager)
+        env:
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
         run: |
-          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-          kubectl -n kube-system patch deployment metrics-server --type=json \
-            -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+          set -euo pipefail
+          ler() { aws secretsmanager get-secret-value --secret-id "$1" --query SecretString --output text; }
+          campo() { local v; v=$(jq -r "$2 // empty" <<<"$1"); [ -n "$v" ] && echo "::add-mask::$v"; printf '%s' "$v"; }
+          args=()
 
-      - name: Deploy (banco + RabbitMQ + API + HPA)
+          MQ=$(ler "$RABBITMQ_SECRET_ID")
+          args+=(--from-literal=RabbitMq__Username="$(campo "$MQ" .username)")
+          args+=(--from-literal=RabbitMq__Password="$(campo "$MQ" .password)")
+
+          JWT=$(ler "$JWT_SECRET_ID")
+          args+=(--from-literal=Jwt__Key="$(campo "$JWT" .key)")
+
+          # MySQL do oficina-infra-database: {host, port, username, password, dbname}.
+          DB=$(ler "$DB_SECRET_ID")
+          CONN="Server=$(campo "$DB" .host);Port=$(campo "$DB" .port);Database=$(campo "$DB" .dbname);User=$(campo "$DB" .username);Password=$(campo "$DB" .password);"
+          echo "::add-mask::$CONN"
+          args+=(--from-literal=ConnectionStrings__DefaultConnection="$CONN")
+
+          # Senha do admin da equipe: opcional no mesmo secret do JWT ({"key","adminPassword"}).
+          ADMIN=$(campo "$JWT" .adminPassword)
+          if [ -n "$ADMIN" ]; then
+            args+=(--from-literal=Jwt__AdminPassword="$ADMIN")
+          fi
+
+          # Chave do header X-Internal-Key, a mesma da Lambda de autenticação: {"key"}.
+          INTERNA=$(ler "$INTERNAL_KEY_SECRET_ID")
+          args+=(--from-literal=InternalApi__Key="$(campo "$INTERNA" .key)")
+
+          if [ -n "${NEW_RELIC_LICENSE_KEY:-}" ]; then
+            args+=(--from-literal=NEW_RELIC_LICENSE_KEY="$NEW_RELIC_LICENSE_KEY")
+          fi
+
+          kubectl -n "$NAMESPACE" create secret generic "$APP-secrets" "${args[@]}" \
+            --dry-run=client -o yaml > /tmp/secret.yaml
+          kubectl apply -f /tmp/secret.yaml
+          # Vai na anotação do pod: credencial trocada sem mudança de código também reinicia os pods.
+          echo "SECRET_HASH=$(sha256sum /tmp/secret.yaml | cut -c1-16)" >> "$GITHUB_ENV"
+          rm -f /tmp/secret.yaml
+
+      - name: Deploy (kustomize overlay aws)
+        working-directory: k8s/overlays/aws
         run: |
-          kubectl apply -k k8s/overlays/local
-          kubectl -n oficina rollout status statefulset/mysql --timeout=180s
-          kubectl -n oficina rollout status deployment/rabbitmq --timeout=180s
-          kubectl -n oficina rollout status deployment/api --timeout=180s
+          set -euo pipefail
+          kustomize edit set image "$IMAGEM_KUSTOMIZE=$IMAGEM"
+          sed -i "s|__TARGET_GROUP_ARN__|$TARGET_GROUP_ARN|g" targetgroupbinding.yaml
 
-      - name: Verificar recursos
-        run: kubectl -n oficina get pods,svc,hpa
+          kustomize build . > /tmp/manifestos.yaml
+          if grep -n '__[A-Z_]*__' /tmp/manifestos.yaml; then
+            echo "::error::Placeholder sem valor nos manifestos (acima)."
+            exit 1
+          fi
+          kubectl apply -f /tmp/manifestos.yaml
+          kubectl -n "$NAMESPACE" patch deployment "$APP" --type merge \
+            -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"oficina/secret-hash\":\"$SECRET_HASH\"}}}}}"
+          kubectl -n "$NAMESPACE" rollout status deployment/"$APP" --timeout=300s
+
+      - name: Smoke test (/health/ready)
+        run: |
+          kubectl -n "$NAMESPACE" run "smoke-$GITHUB_RUN_ID" --rm -i --restart=Never \
+            --image=curlimages/curl:8.11.1 --command -- \
+            curl -fsS --retry 5 --retry-delay 3 --retry-all-errors --max-time 10 "http://$APP/health/ready"
+
+      - name: Recursos
+        if: always()
+        run: kubectl -n "$NAMESPACE" get pods,svc,hpa,targetgroupbinding -o wide || true

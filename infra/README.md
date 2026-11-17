@@ -31,8 +31,8 @@ terraform apply    # cria o cluster, instala metrics-server, builda a imagem e f
 Ao final, acesse a API:
 
 ```bash
-kubectl -n oficina rollout status deploy/api
-kubectl -n oficina port-forward svc/api 8080:80
+kubectl -n oficina-os rollout status deploy/os-service
+kubectl -n oficina-os port-forward svc/os-service 8080:80
 # http://localhost:8080/swagger
 ```
 
@@ -42,7 +42,7 @@ kubectl -n oficina port-forward svc/api 8080:80
 | -------- | ------ | --------- |
 | `cluster_name` | `oficina` | Nome do cluster kind. |
 | `worker_count` | `1` | Número de nós worker. |
-| `image_name` | `oficina-mecanica-api:local` | Tag da imagem da API. |
+| `image_name` | `oficina-os-service:local` | Tag da imagem do os-service. |
 | `build_and_load_image` | `true` | Builda e carrega a imagem no kind. Defina `false` se a imagem já vier de um registry. |
 | `apply_manifests` | `true` | Aplica os manifestos após criar o cluster. |
 
@@ -76,23 +76,23 @@ Recria os pods sem alterar os manifestos — útil após carregar uma nova image
 ou para forçar a releitura de ConfigMap/Secret:
 
 ```bash
-kubectl -n oficina rollout restart deployment/api      # reinicia a API (rolling)
-kubectl -n oficina rollout status deployment/api       # acompanha o rollout
-kubectl -n oficina rollout restart statefulset/mysql   # reinicia o MySQL (se necessário)
+kubectl -n oficina-os rollout restart deployment/os-service      # reinicia a API (rolling)
+kubectl -n oficina-os rollout status deployment/os-service       # acompanha o rollout
+kubectl -n oficina-os rollout restart statefulset/mysql   # reinicia o MySQL (se necessário)
 ```
 
 Alternativas pontuais:
 
 ```bash
-kubectl -n oficina delete pod <nome-do-pod>            # recria só um pod (o Deployment sobe outro)
-kubectl -n oficina scale deployment/api --replicas=0   # derruba tudo...
-kubectl -n oficina scale deployment/api --replicas=2   # ...e sobe de novo
+kubectl -n oficina-os delete pod <nome-do-pod>            # recria só um pod (o Deployment sobe outro)
+kubectl -n oficina-os scale deployment/os-service --replicas=0   # derruba tudo...
+kubectl -n oficina-os scale deployment/os-service --replicas=2   # ...e sobe de novo
 ```
 
 > Após buildar uma imagem nova, carregue-a no kind antes de reiniciar:
 > `docker build -t oficina-mecanica-api:local OficinaMecanicaBackend` →
 > `kind load docker-image oficina-mecanica-api:local --name oficina` →
-> `kubectl -n oficina rollout restart deployment/api`.
+> `kubectl -n oficina-os rollout restart deployment/os-service`.
 
 ### HPA com `TARGETS = <unknown>/70%`
 
@@ -108,8 +108,8 @@ Normalmente o MySQL ainda está subindo. O `Program.cs` tem retry de conexão no
 acompanhe os logs e aguarde o `mysql-0` ficar `Ready`:
 
 ```bash
-kubectl -n oficina get pods
-kubectl -n oficina logs deployment/api
+kubectl -n oficina-os get pods
+kubectl -n oficina-os logs deployment/os-service
 ```
 
 > **Nota sobre cloud:** este módulo mira um ambiente **local (kind)**, conforme

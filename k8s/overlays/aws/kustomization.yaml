@@ -1,19 +1,46 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Overlay de PRODUÇÃO (AWS/EKS): usa o RDS gerenciado (não o MySQL in-cluster) e
-# registra os pods no NLB interno via TargetGroupBinding. O Secret `api-secrets`
-# (connection string do RDS, chave JWT, licença New Relic) é criado pelo pipeline
-# a partir do AWS Secrets Manager — por isso NÃO é versionado aqui.
-namespace: oficina
-
+# Overlay AWS (EKS), usado pelo CD em homolog e prod:
+#   - imagem do ECR: kustomize edit set image oficina-os-service=<ecr>/<repo>:<sha>;
+#   - TargetGroupBinding: registra os pods no target group do serviço no NLB interno
+#     (__TARGET_GROUP_ARN__ = saída target_group_arns do oficina-infra-k8s, trocada no CD);
+#   - Secret os-service-secrets: criado pelo CD a partir do Secrets Manager (não fica aqui).
 resources:
-- ../../base
-- configmap.yaml
-- targetgroupbinding.yaml
+  - ../../base
+  - targetgroupbinding.yaml
 
-# A imagem é apontada para o ECR pelo pipeline: kustomize edit set image ...
 images:
-- name: oficina-mecanica-api
-  newName: 411918631457.dkr.ecr.us-east-1.amazonaws.com/oficina-mecanica-api
-  newTag: latest
+  - name: oficina-os-service
+    newName: oficina-os-service
+    newTag: latest
+
+patches:
+  # Custo em homolog: 1 réplica, e o HPA sobe até 3 sob carga. Em prod, suba minReplicas.
+  - target:
+      kind: Deployment
+      name: os-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: os-service
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+  - target:
+      kind: ConfigMap
+      name: os-service-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: os-service-config
+      data:
+        NEW_RELIC_APP_NAME: "oficina-os-service"
