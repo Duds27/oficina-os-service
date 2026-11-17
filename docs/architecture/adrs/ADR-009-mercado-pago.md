@@ -1,6 +1,6 @@
 # ADR-009 — Pagamento com Mercado Pago (Checkout Pro)
 
-- **Status:** Proposto (rascunho da Etapa 0; fluxo validado no spike S3)
+- **Status:** Proposto: implementado e testado contra o Mercado Pago simulado (WireMock). O spike S3, no sandbox, depende da rota pública do webhook e está na [Etapa 6](../../fase4/etapa-6-documentacao-entrega.md#60-implantação-na-aws-e-validação-no-new-relic). Passa a *Aceito* depois dele e da revisão do grupo
 - **Data:** 2026-11-15
 
 ## Contexto
@@ -56,3 +56,11 @@ Requisitos:
 - **Checkout Transparente / API de pagamentos direta:** exigiria tokenizar o cartão num front-end nosso, sem ganho para o objetivo da fase.
 - **Pagamento só por Pix:** o estorno de Pix tem fluxo e prazos próprios e é mais difícil de simular em sandbox.
 - **Pagar na entrega:** simplifica a saga, mas tira a transação financeira do meio do fluxo e, com ela, a compensação por estorno.
+
+## Resultado da implementação (Fase 4)
+
+- **Gateway.** `MercadoPagoGateway` no billing-service: preferência com um item no total do orçamento, consulta do pagamento no webhook e estorno com chave de idempotência (o id do pagamento). Retry, timeout e circuit breaker vêm do standard resilience handler.
+- **Webhook.** `POST /webhooks/mercadopago`, público no API Gateway com throttling. A assinatura `x-signature` (HMAC-SHA256 do manifesto `id;request-id;ts`) é validada no serviço, e a notificação vai para o outbox antes de ser processada.
+- **Gateway Fake.** É o padrão. Usado em testes, compose e kind, com a rota `/dev` para simular o pagamento.
+- **Regras de corrida da seção 5 dos contratos.** Pagamento aprovado depois do cancelamento ou da recusa é estornado sozinho (`pagamento.resultado{status=tardio}`).
+- **Pendente (Etapa 6, 6.0):** os 4 passos no sandbox e os payloads reais nos testes com WireMock.
