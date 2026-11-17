@@ -24,6 +24,7 @@ e a collection Postman.
 | Observabilidade (OpenTelemetry → New Relic, dashboard, alertas) | [`docs/observability`](docs/observability/README.md) |
 | Sistema completo local, seed e saga de ponta a ponta | [Sistema completo](#sistema-completo-os-3-microsserviços) e [Observabilidade](#observabilidade-fase-4) |
 | Collection Postman e environments | [`postman/`](postman) |
+| Documento de entrega (PDF) e roteiro do vídeo | [`docs/entrega-fase4.md`](docs/entrega-fase4.md) · [`docs/roteiro-video-fase4.md`](docs/roteiro-video-fase4.md) |
 | Outros serviços | [`oficina-billing-service`](https://github.com/Duds27/oficina-billing-service) · [`oficina-execution-service`](https://github.com/Duds27/oficina-execution-service) |
 | Plataforma | [`oficina-infra-k8s`](https://github.com/Duds27/oficina-infra-k8s) · [`oficina-lambda-auth`](https://github.com/Duds27/oficina-lambda-auth) · [`oficina-infra-database`](https://github.com/Duds27/oficina-infra-database) |
 
