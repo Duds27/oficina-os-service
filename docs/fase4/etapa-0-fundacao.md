@@ -66,7 +66,7 @@ Deixar os três repositórios prontos para trabalho em paralelo, com contratos d
 | Spike | Pergunta | Pronto quando |
 | --- | --- | --- |
 | **S1** — MassTransit + saga ✅ ([resultado](../../spikes/S1-masstransit-saga/README.md): aprovado, versão fixada em 8.4.1) | A state machine persistida em MySQL (EF Core, concorrência otimista) + outbox funciona com o `AppDbContext` atual? O `[EntityName]` faz produtor e consumidor com namespaces diferentes usarem o mesmo exchange? | PoC: evento publicado → saga criada no MySQL → comando enviado, com o RabbitMQ em Docker. Mais uma mensagem entregue entre dois projetos com namespaces diferentes. Confirmar também a imagem `rabbitmq:4.1-management` dos composes com o MassTransit 8.x. |
-| **S2** — Trace pelo broker | O agente .NET do New Relic propaga o trace pelo RabbitMQ/MassTransit? Ou precisamos de OpenTelemetry → OTLP? | Um trace no New Relic com o span do publisher e o do consumer ligados |
+| **S2** — Trace pelo broker ✅ (Etapa 5: OpenTelemetry → OTLP. O MassTransit propaga o contexto nos headers, e o trace atravessou os 3 serviços num coletor local; falta conferir no New Relic, 5.7) | O agente .NET do New Relic propaga o trace pelo RabbitMQ/MassTransit? Ou precisamos de OpenTelemetry → OTLP? | Um trace no New Relic com o span do publisher e o do consumer ligados |
 | **S3** — Mercado Pago sandbox | Conseguimos criar preferência, pagar com cartão de teste, receber o webhook e estornar? | Os 4 passos executados; payloads de exemplo salvos para os testes com WireMock |
 | **S4** — RabbitMQ no EKS | O RabbitMQ Cluster Operator sobe com volume persistente (EBS CSI) no cluster atual? | `RabbitmqCluster` saudável, UI acessível por port-forward e mensagem publicada de um pod |
 

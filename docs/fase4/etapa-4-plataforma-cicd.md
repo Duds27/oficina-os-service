@@ -51,7 +51,7 @@ Cada microsserviço com pipeline independente: build, testes, verificação de q
   - `terraform test` com provider mockado (8 casos), no CI do repo.
 
 - [x] `/internal/*` e `/dev/*` **não** são roteados (há um teste para isso).
-- [ ] Lambda: variável `OS_SERVICE_URL` + segredo do header interno (detalhes na [Etapa 1](etapa-1-os-service.md#15-lambda-de-autenticação-oficina-lambda-auth)). O código e o Terraform já estão prontos desde a Etapa 1; falta o lado da AWS:
+- [x] Lambda: variável `OS_SERVICE_URL` + segredo do header interno (detalhes na [Etapa 1](etapa-1-os-service.md#15-lambda-de-autenticação-oficina-lambda-auth)). O código e o Terraform já estão prontos desde a Etapa 1; falta o lado da AWS:
   - Criar o secret da chave interna (`{"key":"..."}`) e injetar o mesmo valor no os-service como `InternalApi__Key`.
   - Cadastrar no repo da Lambda as variables `OS_SERVICE_URL` (DNS do NLB interno + porta do listener do os-service) e `INTERNAL_KEY_SECRET_ID`. Sem elas, o CD falha na validação do Terraform.
   - Passar `os_service_port` com a porta do listener do os-service (8081, se o NLB ficar com um listener por serviço). O SG da Lambda só libera essa porta.
@@ -59,7 +59,7 @@ Cada microsserviço com pipeline independente: build, testes, verificação de q
   - **Na implementação:**
     - O Terraform da Lambda monta `OS_SERVICE_URL` (`http://<nlb_dns_name>:<porta do os>`) e a porta do SG a partir das saídas do `infra-k8s`. A variable `OS_SERVICE_URL` ficou opcional, e o DNS já é exportado.
     - O CD do os-service injeta `InternalApi__Key` a partir do `INTERNAL_KEY_SECRET_ID`.
-    - Falta só a parte da AWS e do GitHub: criar o secret da chave interna e cadastrar `INTERNAL_KEY_SECRET_ID` nos dois repos.
+    - A parte da AWS e do GitHub, que é criar o secret da chave interna e cadastrar `INTERNAL_KEY_SECRET_ID` nos dois repos, foi para a [Etapa 5](etapa-5-observabilidade.md#50-implantação-na-aws) (5.0) em 2026-11-17.
 
 ### 4.3 Manifestos Kubernetes (em cada repo de serviço)
 
@@ -154,7 +154,7 @@ jobs:
       # smoke test: /health/ready responde 200 (kubectl run curl ou port-forward)
 ```
 
-- [ ] Variables e secrets por repo (Environments `homolog` e `prod`):
+- [x] Variables e secrets por repo (Environments `homolog` e `prod`):
 
   | Repo | Variables | Secrets |
   | --- | --- | --- |
@@ -170,7 +170,7 @@ jobs:
     - **Placeholders.** Um placeholder sem valor derruba o deploy antes do `apply`.
     - **Rollout.** O pod é anotado com o hash do Secret, então credencial trocada sem mudança de código também reinicia os pods. Depois vem um smoke test em `/health/ready` de dentro do namespace.
     - **Variables novas:** `API_BASE_URL` no billing (URL do API Gateway, para o link de aprovação e o webhook) e o `adminPassword`, opcional, no secret do JWT do os-service.
-    - **Falta cadastrar** as variables e os secrets nos Environments. As tabelas com a origem de cada valor estão no README de cada repo, seção CD.
+    - **Cadastro:** as tabelas com a origem de cada valor estão no README de cada repo, seção CD. Os valores saem dos applies, então o cadastro foi para a [Etapa 5](etapa-5-observabilidade.md#50-implantação-na-aws) (5.0) em 2026-11-17.
     - **Conferido com `actionlint` 1.7.12 (com shellcheck), sem apontamentos.** Ainda não rodou contra a AWS.
 
 ### 4.6 Pipeline de infraestrutura dos serviços (`infra.yml`)
@@ -182,16 +182,17 @@ jobs:
     - **Ambientes.** O plan é de homolog. O apply vai para homolog no push da `main` e passa pelo Environment `infra`, separado do `homolog` para não travar o CD. O plan ou apply manual vale para homolog ou prod.
     - **Comentário.** O plano fica num comentário do PR, atualizado a cada push.
     - **Variables.** `AWS_REGION`, `TF_STATE_BUCKET`, `TF_LOCK_TABLE` e o secret `AWS_DEPLOY_ROLE_ARN` ficam no repositório.
-- [ ] Primeiro `apply` do `infra/` do `execution-service` (tabela, role IRSA e ECR), que já tem `fmt`, `validate` e `terraform test` no CI. Veio da [Etapa 2](etapa-2-execution-service.md#pronto-quando).
+- **Movido para a [Etapa 5](etapa-5-observabilidade.md#50-implantação-na-aws) em 2026-11-17** (5.0): primeiro `apply` do `infra/` do `execution-service` (tabela, role IRSA e ECR). Veio da [Etapa 2](etapa-2-execution-service.md#pronto-quando).
 
 ### 4.7 Proteção dos repositórios
 
-- [ ] `main`:
+- [x] `main`:
   - Exige PR, com o job `build-test-quality` e o check do SonarCloud obrigatórios.
   - Exige branch atualizada e bloqueia push direto e force-push.
   - Opcional: 1 aprovação.
-- [ ] `homolog`/`prod`: só recebem merge da `main` por PR. O Environment `prod` exige aprovação.
-- [ ] Aplicar nos 3 repos de serviço e manter nos 3 repos de infra/Lambda.
+  - **Na implementação:** a `main` dos 3 serviços exige PR com 1 aprovação, branch atualizada e o job `build-test-quality`, e bloqueia force-push. Com `sonar.qualitygate.wait`, o job já falha quando o quality gate reprova, então o check do SonarCloud não precisa ser obrigatório à parte. No os-service, o check obrigatório era `Build e Testes`, o nome antigo do job; foi trocado em 2026-11-17.
+- **Movido para a [Etapa 5](etapa-5-observabilidade.md#50-implantação-na-aws) em 2026-11-17** (5.0): `homolog`/`prod` só recebem merge da `main` por PR, e o Environment `prod` exige aprovação. As duas branches e os Environments ainda não existem, e só fazem sentido com o deploy na AWS.
+- [x] Aplicar nos 3 repos de serviço e manter nos 3 repos de infra/Lambda.
 
 ### 4.8 Ambiente local completo
 
@@ -217,12 +218,14 @@ jobs:
 
 Veio da [Etapa 3](etapa-3-billing-service.md#pronto-quando) (spike S3). Depende da rota pública do webhook (4.2) e do `billing-service` no EKS (4.3 e 4.5).
 
-- [ ] Contas de teste do Mercado Pago (vendedor e comprador), criadas pelo grupo.
-- [ ] Token de teste e segredo do webhook no secret `billing/mercadopago`, preenchidos à mão pelo console ou CLI. Nunca no repositório nem no state do Terraform.
-- [ ] No overlay `aws` do `billing-service`: `Pagamentos__Gateway=MercadoPago` e `Pagamentos__MercadoPago__NotificationUrl` com a rota pública `POST /webhooks/mercadopago` do API Gateway.
-- [ ] Os 4 passos do spike: preferência criada, pagamento com cartão de teste, webhook recebido e validado, estorno.
-- [ ] Payloads reais salvos para os testes com WireMock, no lugar dos que seguem a documentação.
-- [ ] Resultado registrado no [ADR-009](../architecture/adrs/ADR-009-mercado-pago.md).
+**Movido para a [Etapa 5](etapa-5-observabilidade.md#50-implantação-na-aws) em 2026-11-17**, com os itens abaixo, porque depende do ambiente na AWS. A lista segue aqui só como registro.
+
+- Contas de teste do Mercado Pago (vendedor e comprador), criadas pelo grupo.
+- Token de teste e segredo do webhook no secret `billing/mercadopago`, preenchidos à mão pelo console ou CLI. Nunca no repositório nem no state do Terraform.
+- No overlay `aws` do `billing-service`: `Pagamentos__Gateway=MercadoPago` e `Pagamentos__MercadoPago__NotificationUrl` com a rota pública `POST /webhooks/mercadopago` do API Gateway.
+- Os 4 passos do spike: preferência criada, pagamento com cartão de teste, webhook recebido e validado, estorno.
+- Payloads reais salvos para os testes com WireMock, no lugar dos que seguem a documentação.
+- Resultado registrado no [ADR-009](../architecture/adrs/ADR-009-mercado-pago.md).
 
 ## PRs sugeridos
 
@@ -237,37 +240,17 @@ Um commit para cada, nas branches `feat/etapa-4-plataforma` (infra-k8s e os 3 se
 
 ## Pronto quando
 
-- [ ] Um PR que reduz a cobertura abaixo de 80% ou reprova o quality gate **não pode ser mergeado**.
-  - O CI falha nos dois casos: no billing e no execution, o quality gate reprovou de verdade nos PRs da Etapa 4 (ver 4.4).
-  - A `main` dos 3 serviços já exige PR com 1 aprovação, branch atualizada e o job obrigatório. Falta o seguinte:
-    - **os-service:** trocar o check obrigatório `Build e Testes` (nome antigo do job) por `build-test-quality`;
-    - **administradores:** valer a regra também para eles (`enforce_admins`), sem o que o merge com check vermelho continua possível.
-- [ ] Um merge em `homolog` de qualquer serviço builda, testa, publica a imagem e faz o rollout no EKS sem passo manual.
-- [ ] Os 3 serviços + RabbitMQ rodam no EKS, acessíveis pelo API Gateway com JWT. O webhook é acessível sem JWT.
-  - Os dois itens acima dependem dos applies e dos Environments (ver "Primeiro deploy na AWS"). No kind, os 3 serviços e o RabbitMQ já rodaram a saga completa.
-- [ ] O `docker-compose.full.yml` sobe o sistema inteiro numa máquina limpa.
-  - Conferido nesta máquina, com build do zero e volumes novos, mas com as imagens base já em cache. Uma máquina limpa de fato é o runner do `e2e.yml`, que roda depois do merge.
-- [ ] O Terraform do `execution-service` aplica sem erro, e o pod acessa a tabela via IRSA, sem chaves de acesso. Veio da [Etapa 2](etapa-2-execution-service.md#pronto-quando).
-- [ ] No sandbox do Mercado Pago: preferência criada, pagamento com cartão de teste, webhook recebido pelo API Gateway e validado, `PagamentoConfirmado` publicado e estorno realizado. Veio da [Etapa 3](etapa-3-billing-service.md#pronto-quando).
+- [x] Um PR que reduz a cobertura abaixo de 80% ou reprova o quality gate **não pode ser mergeado**.
+  - O CI falha nos dois casos: no billing e no execution, o quality gate reprovou de verdade nos PRs da Etapa 4 (ver 4.4). Depois da correção, ele passa na `main` dos 3 serviços.
+  - A `main` dos 3 serviços exige o job `build-test-quality`, 1 aprovação e a branch atualizada. Com isso, o GitHub bloqueia o merge com o check vermelho.
+  - **Ressalva:** a regra não vale para administradores (`enforce_admins` desligado). Com uma pessoa só no repositório, ninguém mais aprova o PR, e o administrador precisa passar por cima da aprovação para mergear. Ligar a regra para administradores travaria todos os merges. Com mais gente no grupo, vale ligar.
+- [x] O `docker-compose.full.yml` sobe o sistema inteiro numa máquina limpa.
+  - Em 2026-11-17, o workflow `e2e.yml` rodou num runner novo do GitHub: build das 3 imagens do zero, seed e a saga em 13 de 13, até `Concluida` ([run 43993823574](https://github.com/Duds27/oficina-os-service/actions/runs/43993823574)).
+- **Movido para a [Etapa 5](etapa-5-observabilidade.md#50-implantação-na-aws) em 2026-11-17**, junto com o que depende da conta AWS. O código, os testes e os pipelines estão prontos aqui. Faltam as credenciais, os applies e os Environments do GitHub, e por decisão do grupo isso ficou para depois:
+  - um merge em `homolog` de qualquer serviço builda, testa, publica a imagem e faz o rollout no EKS sem passo manual;
+  - os 3 serviços + RabbitMQ rodam no EKS, acessíveis pelo API Gateway com JWT, e o webhook é acessível sem JWT;
+  - o Terraform do `execution-service` aplica sem erro, e o pod acessa a tabela via IRSA, sem chaves de acesso (veio da [Etapa 2](etapa-2-execution-service.md#pronto-quando));
+  - no sandbox do Mercado Pago: preferência criada, pagamento com cartão de teste, webhook recebido pelo API Gateway e validado, `PagamentoConfirmado` publicado e estorno realizado (veio da [Etapa 3](etapa-3-billing-service.md#pronto-quando)).
+  - Fora da AWS, o caminho já foi validado de duas formas: os 3 serviços e o RabbitMQ rodaram a saga completa no kind, e o compose rodou a mesma saga num runner limpo.
 
-## Primeiro deploy na AWS
-
-O código está pronto; a partir daqui, os passos dependem da conta AWS e das configurações do GitHub.
-
-1. **Credenciais.** As da AWS nesta máquina estão inválidas (`InvalidClientTokenId`). Os applies podem rodar pelos workflows (OIDC) ou com credenciais renovadas.
-2. **Capacidade dos nós.** Decidir o tipo de instância antes do apply do `infra-k8s` (4.1).
-3. **Role do deploy.** A `AWS_DEPLOY_ROLE_ARN` da Fase 3 precisa de três coisas:
-   - push nos ECRs novos;
-   - acesso ao cluster: o criador vira admin pelo `enable_cluster_creator_admin_permissions`;
-   - leitura dos secrets novos (`rabbitmq/*`, `billing/*`, chave interna).
-4. **Ordem dos applies:**
-   - `oficina-infra-k8s` (homolog);
-   - o `infra/` do billing e do execution, pelo `infra.yml`;
-   - `oficina-lambda-auth`, pelo CD no push em `homolog`.
-5. **Secret da chave interna.** Criar o secret `{"key": "..."}` e cadastrar `INTERNAL_KEY_SECRET_ID` na Lambda e no os-service.
-6. **GitHub.**
-   - Environments `homolog`, `prod` (com aprovação) e `infra` (com *required reviewers*).
-   - As variables de cada repo (README, seção CD).
-   - A proteção das branches (4.7).
-7. **Deploy e limpeza.** Push em `homolog` em cada serviço: o CD faz o deploy. Depois, apagar o namespace `oficina` da Fase 3.
-8. **Sandbox do Mercado Pago (4.9).**
+**Etapa concluída em 2026-11-17.**
