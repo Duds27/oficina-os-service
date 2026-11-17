@@ -20,6 +20,12 @@
 #   POST http://localhost:8082/dev/pagamentos/{id}/simular?resultado=aprovado
 # Prazos da saga e do orçamento: PRAZO (padrão 10 min). Use PRAZO=00:02:00 para ver as
 # compensações por timeout.
+#
+# Observabilidade (Etapa 5): com o perfil "observabilidade" e OTEL_ENDPOINT, os 3 serviços
+# mandam traces, métricas e logs por OTLP para um OpenTelemetry Collector local, com o
+# Jaeger para os traces (http://localhost:16686):
+#   OTEL_ENDPOINT=http://otel-collector:4317 docker compose -f docker-compose.full.yml --profile observabilidade up --build -d
+# Sem OTEL_ENDPOINT, nada é exportado. scripts/e2e_observabilidade.py confere tudo.
 name: oficina-full
 
 x-rabbitmq-env: &rabbitmq-env
@@ -32,6 +38,13 @@ x-jwt-env: &jwt-env
   # Mesma chave nos 3: os tokens emitidos pelo os-service (equipe) valem no billing e no execution.
   Jwt__Key: OficinaMecanicaSecretKeyMustBe32CharactersMin!
 
+x-otel-env: &otel-env
+  # Vazio: nada é exportado. No EKS, o endpoint é o OTLP do New Relic.
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
+  # Métricas a cada 10 s (o padrão é 60 s), para ver o resultado logo na máquina.
+  OTEL_METRIC_EXPORT_INTERVAL: "10000"
+  Observabilidade__Ambiente: local
+
 services:
   os-service:
     build: ./OficinaMecanicaBackend
@@ -39,7 +52,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      <<: [*rabbitmq-env, *jwt-env]
+      <<: [*rabbitmq-env, *jwt-env, *otel-env]
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: Server=mysql;Port=3306;Database=OficinaMecanica;User=root;Password=Your_password123;
       InternalApi__Key: dev-internal-key-troque-em-producao
@@ -59,7 +72,7 @@ services:
     ports:
       - "8082:8080"
     environment:
-      <<: [*rabbitmq-env, *jwt-env]
+      <<: [*rabbitmq-env, *jwt-env, *otel-env]
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__BillingDb: Host=postgres;Port=5432;Database=billing;Username=billing;Password=billing_dev
       Pagamentos__Gateway: Fake
@@ -79,7 +92,7 @@ services:
     ports:
       - "8083:8080"
     environment:
-      <<: [*rabbitmq-env, *jwt-env]
+      <<: [*rabbitmq-env, *jwt-env, *otel-env]
       ASPNETCORE_ENVIRONMENT: Development
       DynamoDb__ServiceUrl: http://dynamodb:8000
       DynamoDb__TableName: oficina-execucoes
@@ -150,6 +163,29 @@ services:
     command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
     ports:
       - "8000:8000"
+
+  # ───────── Observabilidade local (só com --profile observabilidade) ─────────
+  otel-collector:
+    profiles: ["observabilidade"]
+    image: otel/opentelemetry-collector-contrib:0.164.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    # Root só aqui, no perfil local: o coletor grava os logs na pasta montada do host, que no
+    # Linux pertence ao usuário da máquina (a imagem roda como 10001).
+    user: "0:0"
+    volumes:
+      - ./observabilidade/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - ./observabilidade/saida:/saida
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "8889:8889"   # métricas em formato Prometheus
+    depends_on:
+      - jaeger
+
+  jaeger:
+    profiles: ["observabilidade"]
+    image: jaegertracing/jaeger:2.22.0
+    ports:
+      - "16686:16686" # UI e API de consulta dos traces
 
   # Dados de exemplo (serviços, peças, clientes e veículos). Só sobe com --profile seed.
   seed:

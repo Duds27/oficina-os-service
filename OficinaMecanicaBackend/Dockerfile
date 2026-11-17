@@ -19,23 +19,12 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /publish .
 
-# ─────────────────────────── New Relic .NET agent ───────────────────────────
-# Instala o agente APM. A chave de licença e o nome da aplicação são fornecidos
-# em runtime (env NEW_RELIC_LICENSE_KEY / NEW_RELIC_APP_NAME), a partir do Secret.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends wget ca-certificates gnupg \
-    && wget -qO- https://download.newrelic.com/548C16BF.gpg | gpg --dearmor -o /usr/share/keyrings/newrelic.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/newrelic.gpg] https://apt.newrelic.com/debian/ newrelic non-free" > /etc/apt/sources.list.d/newrelic.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends newrelic-dotnet-agent \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV CORECLR_ENABLE_PROFILING=1 \
-    CORECLR_PROFILER={36032161-FFC0-4B61-B559-F6C5D41BAE5A} \
-    CORECLR_NEWRELIC_HOME=/usr/local/newrelic-dotnet-agent \
-    CORECLR_PROFILER_PATH=/usr/local/newrelic-dotnet-agent/libNewRelicProfiler.so \
-    NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=true \
-    NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED=true
+# Observabilidade: desde a Fase 4, o OpenTelemetry da própria aplicação manda traces,
+# métricas e logs por OTLP (src/OficinaMecanica.API/Observabilidade). O agente .NET do
+# New Relic da Fase 3 saiu da imagem para não instrumentar tudo duas vezes.
+# SERVICE_VERSION vira o service.version dos traces; o CD passa o SHA do commit.
+ARG SERVICE_VERSION=dev
+ENV SERVICE_VERSION=${SERVICE_VERSION}
 
 # Executa como usuário não-root 'app' (UID 1654, já presente nas imagens .NET 8).
 # Cria o diretório de logs (usado pelo Serilog) e transfere a propriedade dos

@@ -1,0 +1,453 @@
+{
+  "name": "Oficina Mecânica — Saga de OS (Fase 4)",
+  "description": "Saga orquestrada nos 3 microsserviços: volume, compensações, tempo por etapa, filas do RabbitMQ e saúde dos serviços. Métricas OpenTelemetry (Meters Oficina.Saga, Oficina.Billing e Oficina.Execucao), spans e logs por OTLP e métricas Prometheus do RabbitMQ.",
+  "permissions": "PUBLIC_READ_WRITE",
+  "pages": [
+    {
+      "name": "Saga",
+      "description": null,
+      "widgets": [
+        {
+          "title": "Sagas iniciadas, concluídas e compensadas por dia",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 8,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(saga.iniciada) AS 'Iniciadas', sum(saga.concluida) AS 'Concluídas', sum(saga.compensada) AS 'Compensadas' FROM Metric WHERE service.name = 'os-service' SINCE 7 days ago TIMESERIES 1 day"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "legend": {
+              "enabled": true
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        },
+        {
+          "title": "Motivos de compensação",
+          "layout": {
+            "column": 9,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.pie"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(saga.compensada) FROM Metric WHERE service.name = 'os-service' FACET motivo SINCE 7 days ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        },
+        {
+          "title": "Funil: OS aberta → orçamento aprovado → pago → finalizado",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(saga.iniciada) AS '1. OS abertas', filter(sum(orcamento.decisao), WHERE resultado = 'aprovado') AS '2. Orçamentos aprovados', filter(sum(pagamento.resultado), WHERE status = 'aprovado') AS '3. Pagas', sum(saga.concluida) AS '4. Finalizadas' FROM Metric WHERE service.name IN ('os-service', 'billing-service', 'execution-service') SINCE 7 days ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        },
+        {
+          "title": "Tempo médio por etapa da saga (min)",
+          "layout": {
+            "column": 7,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT average(saga.etapa.duracao) / 60 AS 'min' FROM Metric WHERE service.name = 'os-service' FACET etapa SINCE 7 days ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        },
+        {
+          "title": "Taxa de aprovação de orçamento e de pagamento (%)",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT filter(sum(orcamento.decisao), WHERE resultado = 'aprovado') * 100 / sum(orcamento.decisao) AS 'Orçamentos aprovados (%)', filter(sum(pagamento.resultado), WHERE status = 'aprovado') * 100 / sum(pagamento.resultado) AS 'Pagamentos aprovados (%)' FROM Metric WHERE service.name = 'billing-service' SINCE 7 days ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            }
+          }
+        },
+        {
+          "title": "Sagas com prazo atrasado e estornos",
+          "layout": {
+            "column": 7,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT latest(saga.prazos.atrasados) AS 'Prazos atrasados agora' FROM Metric WHERE service.name = 'os-service' SINCE 30 minutes ago"
+              },
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(pagamento.estorno) AS 'Estornos (7 dias)' FROM Metric WHERE service.name = 'billing-service' SINCE 7 days ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "thresholds": [
+              {
+                "alertSeverity": "CRITICAL",
+                "value": 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filas",
+      "description": null,
+      "widgets": [
+        {
+          "title": "Mensagens nas filas _error (agora)",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.table"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT latest(rabbitmq_queue_messages) AS 'Mensagens' FROM Metric WHERE queue LIKE '%_error' FACET queue SINCE 30 minutes ago LIMIT 50"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        },
+        {
+          "title": "Profundidade das filas",
+          "layout": {
+            "column": 7,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT max(rabbitmq_queue_messages) FROM Metric WHERE queue IS NOT NULL AND queue NOT LIKE '%_error' FACET queue SINCE 3 hours ago TIMESERIES"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "legend": {
+              "enabled": true
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        },
+        {
+          "title": "Fila da oficina por etapa (execution-service)",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT latest(execucao.fila.tamanho) FROM Metric WHERE service.name = 'execution-service' FACET etapa SINCE 30 minutes ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        },
+        {
+          "title": "Duração da execução (p50 e p95, min)",
+          "layout": {
+            "column": 7,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT percentile(execucao.duracao, 50, 95) / 60 FROM Metric WHERE service.name = 'execution-service' SINCE 7 days ago TIMESERIES 1 day"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "legend": {
+              "enabled": true
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Serviços",
+      "description": null,
+      "widgets": [
+        {
+          "title": "Latência p95 por serviço (ms)",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT percentile(duration.ms, 95) FROM Span WHERE span.kind = 'server' AND service.name IN ('os-service', 'billing-service', 'execution-service') FACET service.name SINCE 3 hours ago TIMESERIES"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "legend": {
+              "enabled": true
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        },
+        {
+          "title": "Taxa de erro por serviço (%)",
+          "layout": {
+            "column": 7,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT percentage(count(*), WHERE otel.status_code = 'ERROR' OR numeric(http.response.status_code) >= 500) FROM Span WHERE span.kind = 'server' AND service.name IN ('os-service', 'billing-service', 'execution-service') FACET service.name SINCE 3 hours ago TIMESERIES"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "legend": {
+              "enabled": true
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        },
+        {
+          "title": "Webhook do Mercado Pago por status HTTP",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT count(*) FROM Span WHERE service.name = 'billing-service' AND span.kind = 'server' AND http.route = 'webhooks/mercadopago' FACET http.response.status_code SINCE 1 day ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        },
+        {
+          "title": "Logs de erro por serviço",
+          "layout": {
+            "column": 7,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "linkedEntityGuids": null,
+          "visualization": {
+            "id": "viz.table"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT count(*) FROM Log WHERE service.name IN ('os-service', 'billing-service', 'execution-service') AND severity.text IN ('Error', 'Fatal') FACET service.name, message SINCE 1 day ago LIMIT 20"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "facet": {
+              "showOtherSeries": false
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variables": []
+}

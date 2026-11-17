@@ -148,19 +148,22 @@ public class SagaIntegracaoTests : IClassFixture<CustomWebApplicationFactory>
     {
         var os = await CriarOsAsync(_client, _factory.Services);
         await EsperarSagaAsync(_factory.Services, os.CorrelationId, "AguardandoDiagnostico");
-        // Simula uma saga parada em AguardandoAprovacao com o prazo vencido.
+        // Simula uma saga parada em AguardandoAprovacao com o prazo vencido há mais de duas
+        // rodadas do verificador (30 s cada): conta em saga.prazos.atrasados.
         await using (var escopo = _factory.Services.CreateAsyncScope())
         {
             var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
             var saga = await db.Set<OrdemServicoSagaState>().SingleAsync(s => s.CorrelationId == os.CorrelationId);
             saga.CurrentState = "AguardandoAprovacao";
-            saga.PrazoExpiraEm = DateTime.UtcNow.AddMinutes(-1);
+            saga.PrazoExpiraEm = DateTime.UtcNow.AddMinutes(-10);
             await db.SaveChangesAsync();
         }
 
         var avisos = await _factory.Services.GetRequiredService<VerificadorPrazosSaga>().VerificarAsync();
 
         Assert.True(avisos >= 1);
+        // A contagem do gauge é feita antes de tratar os prazos da rodada.
+        Assert.True(MetricasSaga.PrazosAtrasados >= 1);
         await _harness.EsperarPublicadaAsync<PrazoExpirado>(m =>
             m.CorrelationId == os.CorrelationId && m.EstadoNoMomento == "AguardandoAprovacao");
         // A saga recebe o aviso e aplica a C2.
