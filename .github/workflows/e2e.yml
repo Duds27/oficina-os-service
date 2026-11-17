@@ -1,7 +1,8 @@
 name: E2E
 
 # Manual: sobe o docker-compose.full.yml no runner (os 3 serviços, RabbitMQ e os 3 bancos),
-# roda o seed e a saga de ponta a ponta (scripts/e2e_saga.py), da abertura da OS até Concluida.
+# roda o seed e a saga de ponta a ponta (scripts/e2e_saga.py), da abertura da OS até Concluida,
+# e a collection Postman da Fase 4 com o Newman.
 on:
   workflow_dispatch:
     inputs:
@@ -46,6 +47,22 @@ jobs:
 
       - name: Seed + saga
         run: python3 scripts/e2e_saga.py
+
+      # A collection da Fase 4 (Etapa 6, 6.3) contra o mesmo compose: confere que ela está em dia
+      # com as APIs. Relatório JUnit no artifact.
+      - name: Collection Postman (Newman)
+        run: >
+          npx --yes newman@6.2.3 run postman/oficina-fase4.postman_collection.json
+          -e postman/local.postman_environment.json
+          --reporters cli,junit --reporter-junit-export newman/resultado.xml
+
+      - name: Resultado do Newman
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newman
+          path: newman/
+          if-no-files-found: ignore
 
       - name: Logs
         if: failure()
