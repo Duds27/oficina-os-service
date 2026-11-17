@@ -53,6 +53,13 @@ public class VerificadorPrazosSaga
         await using (var escopo = _escopos.CreateAsyncScope())
         {
             var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            // Métrica saga.prazos.atrasados: prazo vencido há mais de duas rodadas e ainda sem
+            // PrazoExpirado. Num sistema saudável é zero; acima disso, o alerta dispara.
+            var limiteAtraso = agora - 2 * _opcoes.Value.Intervalo;
+            MetricasSaga.RegistrarPrazosAtrasados(await db.Set<OrdemServicoSagaState>().AsNoTracking()
+                .LongCountAsync(s => s.PrazoExpiraEm != null && s.PrazoExpiraEm <= limiteAtraso, ct));
+
             vencidas = await db.Set<OrdemServicoSagaState>().AsNoTracking()
                 .Where(s => s.PrazoExpiraEm != null && s.PrazoExpiraEm <= agora)
                 .OrderBy(s => s.PrazoExpiraEm)

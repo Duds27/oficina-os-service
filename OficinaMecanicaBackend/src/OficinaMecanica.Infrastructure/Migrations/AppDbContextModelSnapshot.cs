@@ -206,6 +206,9 @@ namespace OficinaMecanica.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("varchar(64)");
 
+                    b.Property<DateTime?>("EstadoDesde")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("LinkPagamento")
                         .HasMaxLength(500)
                         .HasColumnType("varchar(500)");

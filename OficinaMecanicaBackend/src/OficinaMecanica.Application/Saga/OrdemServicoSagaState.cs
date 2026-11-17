@@ -34,6 +34,12 @@ public class OrdemServicoSagaState : SagaStateMachineInstance
     public DateTime? AtualizadoEm { get; set; }
 
     /// <summary>
+    /// Desde quando a saga está no estado atual. Alimenta a métrica <c>saga.etapa.duracao</c>.
+    /// Diferente de <see cref="AtualizadoEm"/>, que muda a cada evento tratado.
+    /// </summary>
+    public DateTime? EstadoDesde { get; set; }
+
+    /// <summary>
     /// Concorrência otimista. No MySQL, o Pomelo mapeia DateTime + IsRowVersion() para
     /// timestamp(6) com ON UPDATE CURRENT_TIMESTAMP(6): o banco troca o valor a cada UPDATE.
     /// </summary>

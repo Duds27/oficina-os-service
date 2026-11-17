@@ -66,6 +66,14 @@ public class OrdemServicoStateMachine : MassTransitStateMachine<OrdemServicoSaga
         Correlacionar(() => PrazoExpirado);
         Correlacionar(() => CancelamentoSolicitado);
 
+        // ───────────── Métricas (MetricasSaga) ─────────────
+        // Ao sair de um estado, registra quanto tempo a saga ficou nele. Entrar num estado
+        // marca o início da próxima medição. O Initial do MassTransit não é uma etapa da OS e
+        // fica de fora.
+        WhenLeaveAny(x => x.Then(RegistrarDuracaoDoEstado));
+        WhenEnterAny(x => x.Then(c => c.Saga.EstadoDesde = DateTime.UtcNow));
+        WhenEnter(Concluida, x => x.Then(_ => MetricasSaga.Concluida.Add(1)));
+
         // ───────────── Abertura → diagnóstico ─────────────
         Initially(
             When(OrdemServicoAberta)
@@ -74,6 +82,7 @@ public class OrdemServicoStateMachine : MassTransitStateMachine<OrdemServicoSaga
                     c.Saga.OsId = c.Message.OsId;
                     c.Saga.NumeroOS = c.Message.NumeroOS;
                     c.Saga.CriadoEm = DateTime.UtcNow;
+                    MetricasSaga.Iniciada.Add(1);
                 })
                 .ThenAsync(async c =>
                 {
@@ -336,10 +345,25 @@ public class OrdemServicoStateMachine : MassTransitStateMachine<OrdemServicoSaga
 
     private static async Task CancelarOs(BehaviorContext<OrdemServicoSagaState> c, string motivo)
     {
+        // Toda compensação passa por aqui. A tag é o evento que a disparou, não o texto do
+        // motivo, para a métrica ter poucos valores (o texto fica no log e na saga).
+        MetricasSaga.Compensada.Add(1, new KeyValuePair<string, object?>("motivo", MotivoDaMetrica(c)));
         c.Saga.MotivoCancelamento = motivo;
         c.Saga.PrazoExpiraEm = null;
         Atualizado(c);
         await Status(c, StatusOrdemServico.Cancelada, motivo);
+    }
+
+    /// <summary>Evento que disparou a compensação; o prazo leva junto o estado (ex.: PrazoExpirado.AguardandoPagamento).</summary>
+    public static string MotivoDaMetrica(BehaviorContext<OrdemServicoSagaState> c) =>
+        c.Event.Name == nameof(PrazoExpirado) ? $"{nameof(PrazoExpirado)}.{c.Saga.CurrentState}" : c.Event.Name;
+
+    private void RegistrarDuracaoDoEstado(BehaviorContext<OrdemServicoSagaState> c)
+    {
+        if (c.Saga.EstadoDesde is not { } desde || c.Saga.CurrentState == Initial.Name)
+            return;
+        var segundos = Math.Max(0, (DateTime.UtcNow - desde).TotalSeconds);
+        MetricasSaga.DuracaoEtapa.Record(segundos, new KeyValuePair<string, object?>("etapa", c.Saga.CurrentState));
     }
 
     /// <summary>

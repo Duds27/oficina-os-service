@@ -32,7 +32,8 @@ public static class MensageriaExtensions
 
             // Saga orquestrada da OS, persistida no MySQL com concorrência otimista, no
             // mesmo AppDbContext da OS: estado da saga e mudanças na OS na mesma transação.
-            x.AddSagaStateMachine<OrdemServicoStateMachine, OrdemServicoSagaState>()
+            // O filtro põe o estado da saga nos logs do consumo (EstadoSaga).
+            x.AddSagaStateMachine<OrdemServicoStateMachine, OrdemServicoSagaState>((_, saga) => saga.UseFilter(new EstadoSagaLogFilter()))
                 .UsarRepositorioMySql()
                 .Endpoint(e => e.Name = FilasOs.Saga);
 
@@ -77,6 +78,9 @@ public static class MensageriaExtensions
                     h.Username(rabbit.Username);
                     h.Password(rabbit.Password);
                 });
+
+                // CorrelationId, NumeroOS e MessageType nos logs de todo consumo (ContextoDeLog).
+                cfg.UseConsumeFilter(typeof(ContextoDeLogConsumeFilter<>), context);
 
                 cfg.ConfigureEndpoints(context);
             });

@@ -7,7 +7,7 @@ RabbitMQ em `rabbitmq.messaging.svc.cluster.local`, o mesmo DNS no kind e no EKS
 | --- | --- |
 | `base/` | `Deployment` (2 réplicas, probes de startup, readiness e liveness, requests/limits, `envFrom` do ConfigMap e do Secret, ServiceAccount, `preStop` e `terminationGracePeriodSeconds: 45`), `Service` ClusterIP, `HPA` (CPU 70% / memória 80%, de 2 a 5), `ConfigMap` e `ServiceAccount` |
 | `overlays/local/` | kind: imagem `oficina-os-service:local`, namespace, Secret de desenvolvimento, MySQL (StatefulSet) e o RabbitMQ de desenvolvimento no namespace `messaging`, usado também pelos overlays locais do billing e do execution. 1 réplica, HPA de 1 a 5 |
-| `overlays/aws/` | EKS: imagem do ECR, `TargetGroupBinding` no target group do serviço no NLB interno, e o ConfigMap com `NEW_RELIC_APP_NAME`. 1 réplica, HPA de 1 a 3 (custo em homolog) |
+| `overlays/aws/` | EKS: imagem do ECR, `TargetGroupBinding` no target group do serviço no NLB interno, e o ConfigMap com o ambiente e os ajustes do OpenTelemetry para o New Relic. 1 réplica, HPA de 1 a 3 (custo em homolog) |
 
 ## Decisões
 

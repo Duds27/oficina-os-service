@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using OficinaMecanica.API.Middleware;
+using OficinaMecanica.API.Observabilidade;
 using OficinaMecanica.API.Security;
 using OficinaMecanica.Application;
 using OficinaMecanica.Application.Validators;
@@ -32,8 +33,14 @@ try
         .ReadFrom.Configuration(ctx.Configuration)
         .ReadFrom.Services(services)
         .Enrich.FromLogContext()
+        // trace.id/span.id em todo log e, com endpoint OTLP, o envio dos logs (Etapa 5).
+        .ComTelemetria(ctx.Configuration, ctx.HostingEnvironment)
         .WriteTo.Console(new CompactJsonFormatter())
         .WriteTo.File(new CompactJsonFormatter(), "logs/app-.log", rollingInterval: RollingInterval.Day));
+
+    // OpenTelemetry: traces (HTTP, HttpClient, MassTransit, MySQL) e métricas (HTTP, runtime,
+    // MassTransit e a saga), exportados por OTLP quando OTEL_EXPORTER_OTLP_ENDPOINT existe.
+    builder.Services.AddObservabilidade(builder.Configuration, builder.Environment);
 
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
         ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
