@@ -1,6 +1,6 @@
 # ADR-007 — Mensageria com RabbitMQ e MassTransit 8.x
 
-- **Status:** Proposto (rascunho da Etapa 0). Spike [S1](../../../spikes/S1-masstransit-saga/README.md) concluído; falta o S4 (RabbitMQ no EKS).
+- **Status:** Proposto: implementado e validado na Fase 4 (resultado no fim); aguarda a revisão do grupo para passar a *Aceito*. Spike [S1](../../../spikes/S1-masstransit-saga/README.md) concluído; o S4 (RabbitMQ no EKS) foi validado num kind e falta só o EBS, que depende do EKS (Etapa 6, 6.0).
 - **Data:** 2026-11-15
 
 ## Contexto
@@ -54,3 +54,10 @@ A saga ([ADR-006](ADR-006-saga-orquestrada.md)) precisa de mensageria assíncron
 - **Kafka (MSK):** caro e complexo demais para o volume do projeto. Log de eventos não é necessário aqui.
 - **NServiceBus:** licença comercial.
 - **RabbitMQ sem framework** (`RabbitMQ.Client`): seria preciso implementar outbox, retry, saga e test harness à mão.
+
+## Resultado da implementação (Fase 4)
+
+- **Versões.** MassTransit 8.4.1 nos 3 serviços. Outbox e inbox do EF Core no os-service (MySQL) e no billing (PostgreSQL); outbox e inbox próprios no DynamoDB, no execution-service.
+- **Filas e mensagens.** Uma fila de comando por serviço e eventos publicados em exchanges, com os nomes versionados do catálogo (`oficina.<evento>.v1`). Retry exponencial por endpoint; esgotado, a mensagem vai para a fila `_error`, que tem alerta.
+- **RabbitMQ no EKS.** RabbitMQ Cluster Operator v2.21.1, conferido por SHA-256. A v2.22+ exige cert-manager e RabbitMQ 4.2.4+. Imagem `rabbitmq:4.1-management`, um usuário por serviço via definitions importadas no boot e volume gp3. No kind: operator e `RabbitmqCluster` saudáveis, e a saga completa entre três namespaces.
+- **Trace distribuído.** O contexto do trace passa nos headers das mensagens (ADR-010).

@@ -1,6 +1,6 @@
 # ADR-003 — Segregação em 4 repositórios
 
-- **Status:** Aceito
+- **Status:** Aceito; parcialmente substituído pelo [ADR-005](ADR-005-microsservicos.md) na Fase 4 (o `oficina-app` virou o `oficina-os-service` e surgiram o `oficina-billing-service` e o `oficina-execution-service`)
 - **Data:** 2026-09-06
 
 ## Contexto

@@ -49,36 +49,51 @@ Veio da [Etapa 5](etapa-5-observabilidade.md#pronto-quando) em 2026-11-17 (e, an
 
 ### 6.1 README de cada microsserviço (mesmo modelo nos 3)
 
-- [ ] Propósito e responsabilidades do serviço, e o que **não** é dele.
-- [ ] Diagrama do serviço: camadas, banco, filas que consome e publica.
-- [ ] Tabela de **mensagens publicadas e consumidas** (link para `docs/contratos-mensagens.md`).
-- [ ] Endpoints + link do Swagger.
-- [ ] Como rodar local (compose) e como rodar os testes.
-- [ ] **Evidência de cobertura:** badges do SonarCloud + print do relatório (`docs/evidencias/`).
-- [ ] Pipeline CI/CD (diagrama do fluxo) e como fazer deploy.
-- [ ] Seção **"Saga: estratégia e justificativa"**, resumo do ADR-006 com link. O enunciado exige isso no README.
+- [x] Propósito e responsabilidades do serviço, e o que **não** é dele.
+- [x] Diagrama do serviço: camadas, banco, filas que consome e publica.
+- [x] Tabela de **mensagens publicadas e consumidas** (link para `docs/contratos-mensagens.md`).
+- [x] Endpoints + link do Swagger.
+- [x] Como rodar local (compose) e como rodar os testes.
+- [x] **Evidência de cobertura:** badges do SonarCloud + print do relatório (`docs/evidencias/`).
+- [x] Pipeline CI/CD (diagrama do fluxo) e como fazer deploy.
+- [x] Seção **"Saga: estratégia e justificativa"**, resumo do ADR-006 com link. O enunciado exige isso no README.
+- **Na implementação:**
+  - **os-service.** A seção "Fase 4" fica no topo do README, no mesmo modelo, e a Fase 3 continua abaixo.
+  - **Evidência.** Os badges de linhas e ramos e o resumo por classe saem do relatório do próprio CI da `main` (ReportGenerator), com o run e o commit de origem. No lugar do print, o resumo vai em Markdown, e o SonarCloud entra por link.
+  - **Cobertura de linhas no CI da `main`:** os-service 95,0%, billing 94,7% e execution 96,2%.
 
 ### 6.2 Documentação de arquitetura (`docs/architecture` no `os-service`)
 
-- [ ] Diagrama de componentes atualizado: 3 serviços, bancos, RabbitMQ, API Gateway, Lambda e Mercado Pago.
-- [ ] Diagramas de sequência: caminho feliz + compensações (recusa, pagamento recusado, estorno).
-- [ ] Modelo de dados por serviço:
+- [x] Diagrama de componentes atualizado: 3 serviços, bancos, RabbitMQ, API Gateway, Lambda e Mercado Pago.
+- [x] Diagramas de sequência: caminho feliz + compensações (recusa, pagamento recusado, estorno).
+- [x] Modelo de dados por serviço:
   - ER do MySQL (os) e do PostgreSQL (billing).
   - Padrões de acesso do DynamoDB (execution).
-- [ ] ADRs 005–009 finalizados. ADR-003 marcado como "parcialmente substituído pelo ADR-005".
-- [ ] Atualizar o `README.md` raiz do `os-service` com a seção "Fase 4" (mesmo formato das fases anteriores) e link para este plano.
+- [x] ADRs 005–009 finalizados. ADR-003 marcado como "parcialmente substituído pelo ADR-005".
+  - **Na implementação:**
+    - cada ADR termina com o resultado da implementação;
+    - o status segue *Proposto* até a revisão do grupo, que decide se passa a *Aceito*;
+    - entrou o ADR-010 (OpenTelemetry), e o ADR-004 ficou parcialmente substituído por ele;
+    - cada documento guarda a Fase 3 numa seção de histórico.
+- [x] Atualizar o `README.md` raiz do `os-service` com a seção "Fase 4" (mesmo formato das fases anteriores) e link para este plano.
 
 ### 6.3 Swagger e Postman
 
-- [ ] Swagger em cada serviço. Exportar o `openapi.json` no CI (Swashbuckle CLI) para `docs/openapi.json`, para ficar consultável sem subir a aplicação.
-- [ ] Collection `postman/oficina-fase4.postman_collection.json` no `os-service`:
+- [x] Swagger em cada serviço. Exportar o `openapi.json` no CI (Swashbuckle CLI) para `docs/openapi.json`, para ficar consultável sem subir a aplicação.
+- [x] Collection `postman/oficina-fase4.postman_collection.json` no `os-service`:
   - Pastas: Autenticação → Cadastros → Fluxo completo da OS → Cenários de falha.
   - Scripts que encadeiam variáveis (`token`, `osId`, `orcamentoId`, `pagamentoId`).
   - Environments `local` e `aws`.
 - [ ] Rodar a collection com Newman contra o compose para garantir que está atualizada.
+- **Na implementação:**
+  - **OpenAPI.** O CI dos 3 serviços gera o `docs/openapi.json` com o Swashbuckle CLI e falha se o arquivo versionado estiver diferente.
+  - **Collection.** São 42 requisições. Os passos assíncronos esperam o estado com novas tentativas, e o login pela Lambda é pulado quando o `authUrl` está vazio.
+  - **Newman.** O workflow manual `e2e.yml` roda a collection depois da saga de ponta a ponta. A rodada local, contra o `docker-compose.full.yml`, ficou pendente porque o Docker estava parado.
+  - **Na AWS.** As requisições "Simular pagamento" só existem com o gateway Fake. Com o Mercado Pago, paga-se pelo `linkPagamento` do orçamento, como no [roteiro do vídeo](../roteiro-video-fase4.md).
 
 ### 6.4 Vídeo (≤ 15 min, YouTube/Vimeo público ou não listado)
 
+- [x] Roteiro detalhado em [`docs/roteiro-video-fase4.md`](../roteiro-video-fase4.md): requisições da collection, comandos `kubectl` dos prazos e da *fault injection*, e o que mostrar em cada bloco.
 - [ ] Ensaiar com o roteiro da [seção 10 do plano](README.md#10-roteiro-do-vídeo--15-min) e cronometrar cada bloco.
 - [ ] Checklist antes de gravar:
   - [ ] Ambiente AWS de pé: EKS, RDS, RabbitMQ, API Gateway.
@@ -105,12 +120,16 @@ Veio da [Etapa 5](etapa-5-observabilidade.md#pronto-quando) em 2026-11-17 (e, an
   - Diagrama geral da arquitetura (serviços, bancos e comunicação).
   - Estratégia da saga (orquestração) e justificativa.
   - Justificativa da divisão dos microsserviços e das tecnologias escolhidas.
+  - **Andamento:** o [`docs/entrega-fase4.md`](../entrega-fase4.md) está montado com tudo isso, mais qualidade, CI/CD e observabilidade. Falta o grupo preencher os nomes, os RMs, o grupo e o link do vídeo, e então exportar para PDF.
 
 ### 6.6 Verificação final
 
 - [ ] Usuário `soat-architecture` adicionado como colaborador em **todos** os repositórios.
+  - Em 2026-11-17, ele já é colaborador do os-service, da Lambda, do infra-k8s e do infra-database. Falta no billing e no execution, sem convite pendente.
 - [ ] Todos os links do PDF e dos READMEs abrem (repos, vídeo, SonarCloud, docs).
+  - Em 2026-11-17, os links relativos dos documentos da Etapa 6 (arquivos e âncoras) foram conferidos nos 3 serviços, sem erro. Falta o do vídeo e conferir no GitHub depois do merge.
 - [ ] CI verde na `main` dos 3 serviços, com cobertura ≥ 80% visível nos badges.
+  - O CI está verde na `main` dos 3, com o quality gate do SonarCloud OK. Os badges aparecem no README depois do merge desta etapa.
 - [ ] Tag `v4.0.0` em cada repositório de serviço, marcando a versão entregue.
 - [ ] Revisar o [checklist final do plano](README.md#11-checklist-final-de-entrega) item a item.
 - [ ] Depois da gravação e da correção: `terraform destroy` dos ambientes para evitar custo, se não houver mais demonstração.

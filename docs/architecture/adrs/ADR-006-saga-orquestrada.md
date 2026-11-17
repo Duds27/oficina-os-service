@@ -1,6 +1,6 @@
 # ADR-006 — Saga orquestrada no `os-service`
 
-- **Status:** Proposto (rascunho da Etapa 0, aguardando revisão do grupo). Validado tecnicamente no [spike S1](../../../spikes/S1-masstransit-saga/README.md).
+- **Status:** Proposto: implementado e validado na Fase 4 (resultado no fim); aguarda a revisão do grupo para passar a *Aceito*. Validado tecnicamente no [spike S1](../../../spikes/S1-masstransit-saga/README.md).
 - **Data:** 2026-11-15
 
 ## Contexto
@@ -62,3 +62,15 @@ Rodou com o `AppDbContext` real, MySQL 8.4 e RabbitMQ 4.1 (Testcontainers):
 - **Coreografia** (cada serviço reage aos eventos dos outros): a lógica de compensação ficaria espalhada em três repositórios. Seria difícil responder "em que passo esta OS parou?" e testar o fluxo ponta a ponta.
 - **Orquestrador num serviço separado:** mais um deploy e mais um banco sem responsabilidade de negócio própria.
 - **AWS Step Functions:** prende o fluxo à AWS, não roda no docker-compose e complica os testes BDD locais.
+
+## Resultado da implementação (Fase 4)
+
+- **Máquina de estados.** `OrdemServicoStateMachine` (MassTransit 8.4.1) no os-service, com o estado na tabela `SagaOrdemServico` do MySQL e concorrência otimista. O estado da saga, o status e o histórico da OS, o estoque e os comandos de saída (outbox) são gravados na mesma transação.
+- **Compensações.**
+  - C1: orçamento recusado.
+  - C2: pagamento recusado ou prazo de aprovação/pagamento vencido.
+  - C3: execução rejeitada ou prazo de execução, com estorno.
+  - Prazos: o `VerificadorPrazosSaga` publica `PrazoExpirado`, sem plugin de mensagem atrasada no RabbitMQ.
+- **Eventos fora de ordem ou repetidos.** São ignorados explicitamente, conforme a seção 4 dos [contratos](../../contratos-mensagens.md).
+- **Validação.** Testes da máquina de estados com o harness do MassTransit, integração com MySQL e RabbitMQ reais, cenários BDD e a saga de ponta a ponta nos três serviços (`scripts/e2e_saga.py`).
+- **Métricas (Etapa 5).** `saga.iniciada`, `saga.concluida`, `saga.compensada{motivo}`, `saga.etapa.duracao{etapa}` e `saga.prazos.atrasados`.

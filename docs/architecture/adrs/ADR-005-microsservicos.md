@@ -1,6 +1,6 @@
 # ADR-005 — Divisão em três microsserviços
 
-- **Status:** Proposto (rascunho da Etapa 0, aguardando revisão do grupo)
+- **Status:** Proposto: implementado e validado na Fase 4 (resultado no fim); aguarda a revisão do grupo para passar a *Aceito*
 - **Data:** 2026-11-15
 - **Relaciona-se com:** [ADR-003](ADR-003-quatro-repositorios.md) (substitui em parte: `oficina-app` vira `oficina-os-service` e surgem mais dois repositórios)
 
@@ -47,3 +47,12 @@ Dividir por área de negócio, seguindo o caminho da OS na oficina (atendimento 
 - **Quatro serviços, com catálogo/estoque separado:** a reserva de peças viraria mais uma etapa da saga, com mais uma compensação distribuída, sem ganho de negócio para o tamanho do projeto.
 - **Divisão por camada técnica** (ex.: "serviço de notificação", "serviço de dados"): gera dependência síncrona entre serviços em quase toda requisição.
 - **Monólito modular:** não atende ao requisito de bancos e deploys independentes.
+
+## Resultado da implementação (Fase 4)
+
+- Os três serviços existem como repositórios próprios, cada um com o seu banco, Dockerfile, manifestos Kubernetes, CI (testes, cobertura ≥ 80%, SonarCloud) e CD:
+  - [`oficina-os-service`](https://github.com/Duds27/oficina-os-service);
+  - [`oficina-billing-service`](https://github.com/Duds27/oficina-billing-service);
+  - [`oficina-execution-service`](https://github.com/Duds27/oficina-execution-service).
+- A conversa entre eles é só por mensagens (ADR-007), mais um endpoint interno do os-service para a Lambda de autenticação. Nenhum lê o banco do outro.
+- A saga completa rodou nos três: no `docker-compose.full.yml`, num kind com um namespace por serviço e num runner limpo do GitHub (`e2e.yml`).

@@ -1,6 +1,6 @@
 # ADR-004 — Observabilidade com New Relic
 
-- **Status:** Aceito
+- **Status:** Aceito; parcialmente substituído pelo [ADR-010](ADR-010-opentelemetry.md) na Fase 4 (o agente .NET do New Relic deu lugar ao OpenTelemetry por OTLP; o New Relic continua como destino)
 - **Data:** 2026-09-06
 
 ## Contexto

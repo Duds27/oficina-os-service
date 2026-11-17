@@ -109,6 +109,24 @@ jobs:
             exit 1
           fi
 
+      # Contrato HTTP versionado em docs/openapi.json, consultável sem subir a aplicação. O CLI
+      # do Swashbuckle sobe o host só até o Build (sem banco nem broker), por isso a configuração
+      # mínima nas variáveis. Endpoint mudou e o arquivo não? O passo falha com o comando para gerar.
+      - name: OpenAPI (docs/openapi.json)
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          Jwt__Key: "OficinaMecanicaSecretKeyMustBe32CharactersMin!"
+          ConnectionStrings__DefaultConnection: "Server=nao-usado;Database=nao-usado;User=x;Password=x"
+          Jwt__Issuer: "OficinaMecanicaBackend"
+          Jwt__Audience: "OficinaMecanicaBackend"
+        run: |
+          dotnet tool install --global Swashbuckle.AspNetCore.Cli --version 6.9.0
+          swagger tofile --output ../docs/openapi.json src/OficinaMecanica.API/bin/Release/net8.0/OficinaMecanica.API.dll v1
+          if ! git diff --exit-code -- ../docs/openapi.json; then
+            echo "::error::docs/openapi.json desatualizado. Gere de novo com: swagger tofile --output ../docs/openapi.json src/OficinaMecanica.API/bin/Release/net8.0/OficinaMecanica.API.dll v1 (depois de um build Release)."
+            exit 1
+          fi
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4

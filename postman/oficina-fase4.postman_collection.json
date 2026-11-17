@@ -1,0 +1,1828 @@
+{
+  "info": {
+    "_postman_id": "93ab0a65-56ac-599a-936d-902967c2ad19",
+    "name": "Oficina Mecânica — Fase 4",
+    "description": "Os 3 microsserviços (os, billing e execution) e a saga orquestrada. Rode na ordem: Autenticação → Cadastros → Fluxo completo da OS → Cenários de falha. Environments: postman/local.postman_environment.json (docker-compose.full.yml) e postman/aws.postman_environment.json (API Gateway). Newman: npx newman run postman/oficina-fase4.postman_collection.json -e postman/local.postman_environment.json",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Autenticação",
+      "item": [
+        {
+          "name": "Login da equipe (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));",
+                  "pm.environment.set('token', pm.response.json().token);",
+                  "// Sem a URL da Lambda (ambiente local), pula o login do cliente por CPF.",
+                  "if (!pm.environment.get('authUrl')) postman.setNextRequest('Cadastrar cliente');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{osUrl}}/api/auth/login",
+              "host": [
+                "{{osUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login por usuário e senha no os-service (POST /api/auth/login, público no API Gateway). O token de Admin vale nos 3 serviços.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{adminUser}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Login do cliente por CPF (Lambda)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));",
+                  "pm.environment.set('tokenCliente', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{authUrl}}/auth",
+              "host": [
+                "{{authUrl}}"
+              ],
+              "path": [
+                "auth"
+              ]
+            },
+            "description": "Só na AWS: a Lambda consulta o os-service pelo endpoint interno e devolve o JWT do cliente (role Cliente). Use o CPF de um cliente cadastrado (o seed cria 529.982.247-25).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cpf\": \"{{cpfCliente}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Cadastros",
+      "item": [
+        {
+          "name": "Cadastrar cliente",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function cpfValido() {",
+                  "    const d = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10));",
+                  "    for (const t of [9, 10]) {",
+                  "        let soma = 0;",
+                  "        for (let i = 0; i < t; i++) soma += d[i] * (t + 1 - i);",
+                  "        d.push((soma * 10) % 11 % 10);",
+                  "    }",
+                  "    return d.join('');",
+                  "}",
+                  "pm.variables.set('cpfNovo', cpfValido());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.expect(pm.response.code).to.be.oneOf([201]));",
+                  "pm.environment.set('clienteId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{osUrl}}/api/clientes",
+              "host": [
+                "{{osUrl}}"
+              ],
+              "path": [
+                "api",
+                "clientes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cpfCnpj\": \"{{cpfNovo}}\",\n  \"nome\": \"Cliente Postman\",\n  \"email\": \"postman@example.com\",\n  \"telefone\": \"11999990000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cadastrar veículo",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';",
+                  "const l = () => letras[Math.floor(Math.random() * letras.length)];",
+                  "const n = () => Math.floor(Math.random() * 10);",
+                  "pm.variables.set('placaNova', 'TST' + n() + l() + n() + n());",
+                  "pm.variables.set('sufixo', Date.now().toString().slice(-8));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.expect(pm.response.code).to.be.oneOf([201]));",
+                  "pm.environment.set('veiculoId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{osUrl}}/api/veiculos",
+              "host": [
+                "{{osUrl}}"
+              ],
+              "path": [
+                "api",
+                "veiculos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"placa\": \"{{placaNova}}\",\n  \"marca\": \"Volkswagen\",\n  \"modelo\": \"Gol\",\n  \"ano\": 2020,\n  \"cor\": \"Prata\",\n  \"clienteId\": {{clienteId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cadastrar serviço",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.expect(pm.response.code).to.be.oneOf([201]));",
+                  "pm.environment.set('servicoId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{osUrl}}/api/servicos",
+              "host": [
+                "{{osUrl}}"
+              ],
+              "path": [
+                "api",
+                "servicos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Troca de pastilhas {{sufixo}}\",\n  \"descricao\": \"Dianteiras\",\n  \"precoBase\": 150.0,\n  \"tempoEstimadoHoras\": 1,\n  \"ativo\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cadastrar peça",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.expect(pm.response.code).to.be.oneOf([201]));",
+                  "pm.environment.set('pecaId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{osUrl}}/api/pecas",
+              "host": [
+                "{{osUrl}}"
+              ],
+              "path": [
+                "api",
+                "pecas"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Pastilha de freio\",\n  \"descricao\": \"Jogo\",\n  \"codigo\": \"PM-{{sufixo}}\",\n  \"precoUnitario\": 89.9,\n  \"quantidadeEstoque\": 50,\n  \"quantidadeMinima\": 1,\n  \"ativo\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Fluxo completo da OS",
+      "description": "Caminho feliz da saga: OS aberta → diagnóstico → orçamento → aprovação → pagamento → execução → Concluida. A simulação do pagamento usa o gateway Fake (/dev, só no ambiente local); na AWS, pague pelo link do Mercado Pago (sandbox) e siga a partir de 'Aguardar a liberação do reparo'.",
+      "item": [
+        {
+          "name": "Abrir OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.expect(pm.response.code).to.be.oneOf([201]));",
+                  "const os = pm.response.json();",
+                  "pm.environment.set('osId', os.id);",
+                  "pm.environment.set('numeroOS', os.numeroOS);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{osUrl}}/api/ordens-servico",
+              "host": [
+                "{{osUrl}}"
+              ],
+              "path": [
+                "api",
+                "ordens-servico"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"veiculoId\": {{veiculoId}},\n  \"descricao\": \"Freio fazendo barulho\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Adicionar serviço",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200, 201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/itens",
+              "host": [
+                "{{osUrl}}"
+              ],
+              "path": [
+                "api",
+                "ordens-servico",
+                "{{osId}}",
+                "itens"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": 0,\n  \"servicoId\": {{servicoId}},\n  \"quantidade\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Adicionar peça",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200, 201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/itens",
+              "host": [
+                "{{osUrl}}"
+              ],
+              "path": [
+                "api",
+                "ordens-servico",
+                "{{osId}}",
+                "itens"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": 1,\n  \"pecaId\": {{pecaId}},\n  \"quantidade\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Aguardar a execução (SolicitarDiagnostico)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                  "let corpo = null;",
+                  "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                  "const pronto = pm.response.code === 200 && corpo !== null && (corpo.etapa === 'DiagnosticoPendente');",
+                  "if (!pronto && tentativa < 40) {",
+                  "    pm.variables.set('tentativa', tentativa + 1);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "    setTimeout(() => {}, 1000);",
+                  "} else {",
+                  "    pm.variables.unset('tentativa');",
+                  "    pm.test('execution abriu a execução', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                  "    ",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{executionUrl}}/api/execucoes/{{osId}}",
+              "host": [
+                "{{executionUrl}}"
+              ],
+              "path": [
+                "api",
+                "execucoes",
+                "{{osId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Iniciar diagnóstico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{executionUrl}}/api/execucoes/{{osId}}/diagnostico/iniciar",
+              "host": [
+                "{{executionUrl}}"
+              ],
+              "path": [
+                "api",
+                "execucoes",
+                "{{osId}}",
+                "diagnostico",
+                "iniciar"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Concluir diagnóstico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{executionUrl}}/api/execucoes/{{osId}}/diagnostico/concluir",
+              "host": [
+                "{{executionUrl}}"
+              ],
+              "path": [
+                "api",
+                "execucoes",
+                "{{osId}}",
+                "diagnostico",
+                "concluir"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"observacoes\": \"Pastilhas no fim\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Aguardar o orçamento (GerarOrcamento → OrcamentoGerado)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                  "let corpo = null;",
+                  "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                  "const pronto = pm.response.code === 200 && corpo !== null && (Array.isArray(corpo) && corpo.length > 0 && corpo[0].status === 'Enviado');",
+                  "if (!pronto && tentativa < 40) {",
+                  "    pm.variables.set('tentativa', tentativa + 1);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "    setTimeout(() => {}, 1000);",
+                  "} else {",
+                  "    pm.variables.unset('tentativa');",
+                  "    pm.test('billing gerou e enviou o orçamento', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                  "    if (pronto) pm.environment.set('orcamentoId', corpo[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{billingUrl}}/api/orcamentos?osId={{osId}}",
+              "host": [
+                "{{billingUrl}}"
+              ],
+              "path": [
+                "api",
+                "orcamentos"
+              ],
+              "query": [
+                {
+                  "key": "osId",
+                  "value": "{{osId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Aprovar o orçamento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));",
+                  "const pagamento = pm.response.json().pagamento;",
+                  "pm.environment.set('pagamentoId', pagamento.id);",
+                  "pm.test('link de pagamento criado', () => pm.expect(pagamento.linkPagamento).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{billingUrl}}/api/orcamentos/{{orcamentoId}}/aprovacao",
+              "host": [
+                "{{billingUrl}}"
+              ],
+              "path": [
+                "api",
+                "orcamentos",
+                "{{orcamentoId}}",
+                "aprovacao"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aprovado\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Aguardar a saga em AguardandoPagamento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                  "let corpo = null;",
+                  "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                  "const pronto = pm.response.code === 200 && corpo !== null && (corpo.estado === 'AguardandoPagamento');",
+                  "if (!pronto && tentativa < 40) {",
+                  "    pm.variables.set('tentativa', tentativa + 1);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "    setTimeout(() => {}, 1000);",
+                  "} else {",
+                  "    pm.variables.unset('tentativa');",
+                  "    pm.test('saga em AguardandoPagamento', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                  "    ",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/saga",
+              "host": [
+                "{{osUrl}}"
+              ],
+              "path": [
+                "api",
+                "ordens-servico",
+                "{{osId}}",
+                "saga"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Simular pagamento aprovado (gateway Fake)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 202', () => pm.expect(pm.response.code).to.be.oneOf([202]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{billingUrl}}/dev/pagamentos/{{pagamentoId}}/simular?resultado=aprovado",
+              "host": [
+                "{{billingUrl}}"
+              ],
+              "path": [
+                "dev",
+                "pagamentos",
+                "{{pagamentoId}}",
+                "simular"
+              ],
+              "query": [
+                {
+                  "key": "resultado",
+                  "value": "aprovado"
+                }
+              ]
+            },
+            "description": "Só no ambiente local, com Pagamentos__Gateway=Fake. A rota /dev não existe no API Gateway.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Aguardar a liberação do reparo (PagamentoConfirmado → IniciarExecucao)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                  "let corpo = null;",
+                  "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                  "const pronto = pm.response.code === 200 && corpo !== null && (corpo.etapa === 'AguardandoExecucao');",
+                  "if (!pronto && tentativa < 40) {",
+                  "    pm.variables.set('tentativa', tentativa + 1);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "    setTimeout(() => {}, 1000);",
+                  "} else {",
+                  "    pm.variables.unset('tentativa');",
+                  "    pm.test('execution liberou o reparo', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                  "    ",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{executionUrl}}/api/execucoes/{{osId}}",
+              "host": [
+                "{{executionUrl}}"
+              ],
+              "path": [
+                "api",
+                "execucoes",
+                "{{osId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Iniciar reparo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{executionUrl}}/api/execucoes/{{osId}}/reparo/iniciar",
+              "host": [
+                "{{executionUrl}}"
+              ],
+              "path": [
+                "api",
+                "execucoes",
+                "{{osId}}",
+                "reparo",
+                "iniciar"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Finalizar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{executionUrl}}/api/execucoes/{{osId}}/finalizar",
+              "host": [
+                "{{executionUrl}}"
+              ],
+              "path": [
+                "api",
+                "execucoes",
+                "{{osId}}",
+                "finalizar"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Aguardar a saga Concluida",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                  "let corpo = null;",
+                  "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                  "const pronto = pm.response.code === 200 && corpo !== null && (corpo.estado === 'Concluida');",
+                  "if (!pronto && tentativa < 40) {",
+                  "    pm.variables.set('tentativa', tentativa + 1);",
+                  "    postman.setNextRequest(pm.info.requestName);",
+                  "    setTimeout(() => {}, 1000);",
+                  "} else {",
+                  "    pm.variables.unset('tentativa');",
+                  "    pm.test('saga em Concluida', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                  "    ",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/saga",
+              "host": [
+                "{{osUrl}}"
+              ],
+              "path": [
+                "api",
+                "ordens-servico",
+                "{{osId}}",
+                "saga"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Pagamento aprovado no billing",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));",
+                  "pm.test('pagamento Aprovado', () => pm.expect(pm.response.json().status).to.eql('Aprovado'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{billingUrl}}/api/pagamentos/{{pagamentoId}}",
+              "host": [
+                "{{billingUrl}}"
+              ],
+              "path": [
+                "api",
+                "pagamentos",
+                "{{pagamentoId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Histórico da OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));",
+                  "const estados = pm.response.json().map(h => h.statusNovo);",
+                  "pm.test('histórico termina em Finalizada', () => pm.expect(estados[estados.length - 1]).to.eql('Finalizada'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/historico",
+              "host": [
+                "{{osUrl}}"
+              ],
+              "path": [
+                "api",
+                "ordens-servico",
+                "{{osId}}",
+                "historico"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Cenários de falha",
+      "description": "Compensações da saga (docs/contratos-mensagens.md, seção 4). A rejeição da execução (C3, estorno) depende da flag FaultInjection__RejeitarExecucao=true no execution-service e fica de fora daqui.",
+      "item": [
+        {
+          "name": "C1 — orçamento recusado",
+          "item": [
+            {
+              "name": "C1 · Abrir OS",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 201', () => pm.expect(pm.response.code).to.be.oneOf([201]));",
+                      "const os = pm.response.json();",
+                      "pm.environment.set('osId', os.id);",
+                      "pm.environment.set('numeroOS', os.numeroOS);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{osUrl}}/api/ordens-servico",
+                  "host": [
+                    "{{osUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ordens-servico"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"veiculoId\": {{veiculoId}},\n  \"descricao\": \"Freio fazendo barulho\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "C1 · Adicionar serviço",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 200, 201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/itens",
+                  "host": [
+                    "{{osUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ordens-servico",
+                    "{{osId}}",
+                    "itens"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tipo\": 0,\n  \"servicoId\": {{servicoId}},\n  \"quantidade\": 1\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "C1 · Adicionar peça",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 200, 201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/itens",
+                  "host": [
+                    "{{osUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ordens-servico",
+                    "{{osId}}",
+                    "itens"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tipo\": 1,\n  \"pecaId\": {{pecaId}},\n  \"quantidade\": 2\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "C1 · Aguardar a execução (SolicitarDiagnostico)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                      "let corpo = null;",
+                      "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                      "const pronto = pm.response.code === 200 && corpo !== null && (corpo.etapa === 'DiagnosticoPendente');",
+                      "if (!pronto && tentativa < 40) {",
+                      "    pm.variables.set('tentativa', tentativa + 1);",
+                      "    postman.setNextRequest(pm.info.requestName);",
+                      "    setTimeout(() => {}, 1000);",
+                      "} else {",
+                      "    pm.variables.unset('tentativa');",
+                      "    pm.test('execution abriu a execução', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                      "    ",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{executionUrl}}/api/execucoes/{{osId}}",
+                  "host": [
+                    "{{executionUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "execucoes",
+                    "{{osId}}"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "C1 · Iniciar diagnóstico",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{executionUrl}}/api/execucoes/{{osId}}/diagnostico/iniciar",
+                  "host": [
+                    "{{executionUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "execucoes",
+                    "{{osId}}",
+                    "diagnostico",
+                    "iniciar"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "C1 · Concluir diagnóstico",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{executionUrl}}/api/execucoes/{{osId}}/diagnostico/concluir",
+                  "host": [
+                    "{{executionUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "execucoes",
+                    "{{osId}}",
+                    "diagnostico",
+                    "concluir"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"observacoes\": \"Pastilhas no fim\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "C1 · Aguardar o orçamento (GerarOrcamento → OrcamentoGerado)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                      "let corpo = null;",
+                      "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                      "const pronto = pm.response.code === 200 && corpo !== null && (Array.isArray(corpo) && corpo.length > 0 && corpo[0].status === 'Enviado');",
+                      "if (!pronto && tentativa < 40) {",
+                      "    pm.variables.set('tentativa', tentativa + 1);",
+                      "    postman.setNextRequest(pm.info.requestName);",
+                      "    setTimeout(() => {}, 1000);",
+                      "} else {",
+                      "    pm.variables.unset('tentativa');",
+                      "    pm.test('billing gerou e enviou o orçamento', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                      "    if (pronto) pm.environment.set('orcamentoId', corpo[0].id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{billingUrl}}/api/orcamentos?osId={{osId}}",
+                  "host": [
+                    "{{billingUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "orcamentos"
+                  ],
+                  "query": [
+                    {
+                      "key": "osId",
+                      "value": "{{osId}}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "C1 · Recusar o orçamento",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{billingUrl}}/api/orcamentos/{{orcamentoId}}/aprovacao",
+                  "host": [
+                    "{{billingUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "orcamentos",
+                    "{{orcamentoId}}",
+                    "aprovacao"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"aprovado\": false,\n  \"motivo\": \"Caro demais\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "C1 · Aguardar a saga Cancelada (peças devolvidas, execução cancelada)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                      "let corpo = null;",
+                      "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                      "const pronto = pm.response.code === 200 && corpo !== null && (corpo.estado === 'Cancelada');",
+                      "if (!pronto && tentativa < 40) {",
+                      "    pm.variables.set('tentativa', tentativa + 1);",
+                      "    postman.setNextRequest(pm.info.requestName);",
+                      "    setTimeout(() => {}, 1000);",
+                      "} else {",
+                      "    pm.variables.unset('tentativa');",
+                      "    pm.test('saga em Cancelada', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                      "    ",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/saga",
+                  "host": [
+                    "{{osUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ordens-servico",
+                    "{{osId}}",
+                    "saga"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "C2 — pagamento recusado",
+          "item": [
+            {
+              "name": "C2 · Abrir OS",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 201', () => pm.expect(pm.response.code).to.be.oneOf([201]));",
+                      "const os = pm.response.json();",
+                      "pm.environment.set('osId', os.id);",
+                      "pm.environment.set('numeroOS', os.numeroOS);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{osUrl}}/api/ordens-servico",
+                  "host": [
+                    "{{osUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ordens-servico"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"veiculoId\": {{veiculoId}},\n  \"descricao\": \"Freio fazendo barulho\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "C2 · Adicionar serviço",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 200, 201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/itens",
+                  "host": [
+                    "{{osUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ordens-servico",
+                    "{{osId}}",
+                    "itens"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tipo\": 0,\n  \"servicoId\": {{servicoId}},\n  \"quantidade\": 1\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "C2 · Adicionar peça",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 200, 201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/itens",
+                  "host": [
+                    "{{osUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ordens-servico",
+                    "{{osId}}",
+                    "itens"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tipo\": 1,\n  \"pecaId\": {{pecaId}},\n  \"quantidade\": 2\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "C2 · Aguardar a execução (SolicitarDiagnostico)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                      "let corpo = null;",
+                      "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                      "const pronto = pm.response.code === 200 && corpo !== null && (corpo.etapa === 'DiagnosticoPendente');",
+                      "if (!pronto && tentativa < 40) {",
+                      "    pm.variables.set('tentativa', tentativa + 1);",
+                      "    postman.setNextRequest(pm.info.requestName);",
+                      "    setTimeout(() => {}, 1000);",
+                      "} else {",
+                      "    pm.variables.unset('tentativa');",
+                      "    pm.test('execution abriu a execução', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                      "    ",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{executionUrl}}/api/execucoes/{{osId}}",
+                  "host": [
+                    "{{executionUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "execucoes",
+                    "{{osId}}"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "C2 · Iniciar diagnóstico",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{executionUrl}}/api/execucoes/{{osId}}/diagnostico/iniciar",
+                  "host": [
+                    "{{executionUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "execucoes",
+                    "{{osId}}",
+                    "diagnostico",
+                    "iniciar"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "C2 · Concluir diagnóstico",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{executionUrl}}/api/execucoes/{{osId}}/diagnostico/concluir",
+                  "host": [
+                    "{{executionUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "execucoes",
+                    "{{osId}}",
+                    "diagnostico",
+                    "concluir"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"observacoes\": \"Pastilhas no fim\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "C2 · Aguardar o orçamento (GerarOrcamento → OrcamentoGerado)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                      "let corpo = null;",
+                      "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                      "const pronto = pm.response.code === 200 && corpo !== null && (Array.isArray(corpo) && corpo.length > 0 && corpo[0].status === 'Enviado');",
+                      "if (!pronto && tentativa < 40) {",
+                      "    pm.variables.set('tentativa', tentativa + 1);",
+                      "    postman.setNextRequest(pm.info.requestName);",
+                      "    setTimeout(() => {}, 1000);",
+                      "} else {",
+                      "    pm.variables.unset('tentativa');",
+                      "    pm.test('billing gerou e enviou o orçamento', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                      "    if (pronto) pm.environment.set('orcamentoId', corpo[0].id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{billingUrl}}/api/orcamentos?osId={{osId}}",
+                  "host": [
+                    "{{billingUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "orcamentos"
+                  ],
+                  "query": [
+                    {
+                      "key": "osId",
+                      "value": "{{osId}}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "C2 · Aprovar o orçamento",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 200', () => pm.expect(pm.response.code).to.be.oneOf([200]));",
+                      "pm.environment.set('pagamentoId', pm.response.json().pagamento.id);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{billingUrl}}/api/orcamentos/{{orcamentoId}}/aprovacao",
+                  "host": [
+                    "{{billingUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "orcamentos",
+                    "{{orcamentoId}}",
+                    "aprovacao"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"aprovado\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "C2 · Aguardar a saga em AguardandoPagamento",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                      "let corpo = null;",
+                      "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                      "const pronto = pm.response.code === 200 && corpo !== null && (corpo.estado === 'AguardandoPagamento');",
+                      "if (!pronto && tentativa < 40) {",
+                      "    pm.variables.set('tentativa', tentativa + 1);",
+                      "    postman.setNextRequest(pm.info.requestName);",
+                      "    setTimeout(() => {}, 1000);",
+                      "} else {",
+                      "    pm.variables.unset('tentativa');",
+                      "    pm.test('saga em AguardandoPagamento', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                      "    ",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/saga",
+                  "host": [
+                    "{{osUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ordens-servico",
+                    "{{osId}}",
+                    "saga"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "C2 · Simular pagamento recusado (gateway Fake)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('HTTP 202', () => pm.expect(pm.response.code).to.be.oneOf([202]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{billingUrl}}/dev/pagamentos/{{pagamentoId}}/simular?resultado=recusado",
+                  "host": [
+                    "{{billingUrl}}"
+                  ],
+                  "path": [
+                    "dev",
+                    "pagamentos",
+                    "{{pagamentoId}}",
+                    "simular"
+                  ],
+                  "query": [
+                    {
+                      "key": "resultado",
+                      "value": "recusado"
+                    }
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "C2 · Aguardar a saga Cancelada (orçamento cancelado, peças devolvidas)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const tentativa = Number(pm.variables.get('tentativa') || 0);",
+                      "let corpo = null;",
+                      "try { corpo = pm.response.json(); } catch (e) { corpo = null; }",
+                      "const pronto = pm.response.code === 200 && corpo !== null && (corpo.estado === 'Cancelada');",
+                      "if (!pronto && tentativa < 40) {",
+                      "    pm.variables.set('tentativa', tentativa + 1);",
+                      "    postman.setNextRequest(pm.info.requestName);",
+                      "    setTimeout(() => {}, 1000);",
+                      "} else {",
+                      "    pm.variables.unset('tentativa');",
+                      "    pm.test('saga em Cancelada', () => pm.expect(pronto, 'esperou ' + tentativa + ' s').to.be.true);",
+                      "    ",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{osUrl}}/api/ordens-servico/{{osId}}/saga",
+                  "host": [
+                    "{{osUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "ordens-servico",
+                    "{{osId}}",
+                    "saga"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

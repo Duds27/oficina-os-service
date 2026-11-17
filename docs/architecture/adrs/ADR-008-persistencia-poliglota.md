@@ -1,6 +1,6 @@
 # ADR-008 — Persistência poliglota (MySQL, PostgreSQL e DynamoDB)
 
-- **Status:** Proposto (rascunho da Etapa 0; RDS separado para o billing ainda em decisão)
+- **Status:** Proposto: implementado e validado na Fase 4 (resultado no fim); aguarda a revisão do grupo para passar a *Aceito*. O billing ficou com um RDS PostgreSQL próprio.
 - **Data:** 2026-11-15
 - **Relaciona-se com:** [RFC-002](../rfcs/RFC-002-escolha-banco.md) (escolha do MySQL na Fase 3)
 
@@ -48,3 +48,10 @@ Cada microsserviço ([ADR-005](ADR-005-microsservicos.md)) precisa de um banco p
 - **MySQL para todos (instâncias separadas):** menos variedade para operar, mas perde a justificativa técnica por serviço e a demonstração de independência tecnológica.
 - **MongoDB / DocumentDB para o execution:** o DocumentDB tem custo mínimo alto. O MongoDB Atlas sairia da AWS e da rede privada.
 - **Um banco compartilhado com schemas separados:** viola o requisito de nenhum acesso a banco de outro serviço.
+
+## Resultado da implementação (Fase 4)
+
+- **os-service:** MySQL 8.4, o RDS da Fase 3. Novas tabelas: histórico de status, saga e outbox/inbox.
+- **billing-service:** PostgreSQL 16 num RDS próprio, criado pelo `infra/` do repositório. É privado (só o SG dos nós do EKS acessa), e as credenciais ficam no Secrets Manager. Concorrência otimista por `xmin`.
+- **execution-service:** DynamoDB numa tabela única com dois GSIs (fila por etapa e outbox), acessado pela role IRSA da ServiceAccount, sem chaves. Transações com `TransactWriteItems` e condição na versão.
+- Modelos e padrões de acesso: [`database-model.md`](../database-model.md).

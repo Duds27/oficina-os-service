@@ -6,6 +6,141 @@ API REST para gestão de uma oficina mecânica de médio porte, desenvolvida com
 
 ---
 
+## Fase 4 — Microsserviços e saga orquestrada
+
+A Fase 4 divide a aplicação em **três microsserviços**, cada um com o seu banco, conversando por eventos e
+comandos no RabbitMQ. Uma **saga orquestrada** leva a OS do diagnóstico ao pagamento e à execução, com
+compensações (estorno, devolução de estoque, cancelamento) quando algo falha. Este repositório é o
+**os-service**, o orquestrador da saga. Ele também guarda a documentação geral, o compose do sistema inteiro
+e a collection Postman.
+
+> **Estado atual:** implementado e validado fora da AWS. Etapas 1 a 5 concluídas; a implantação no EKS, o New Relic com dados e o sandbox do Mercado Pago estão na [Etapa 6](docs/fase4/etapa-6-documentacao-entrega.md#60-implantação-na-aws-e-validação-no-new-relic).
+
+| | |
+| --- | --- |
+| Plano da fase (etapas 0 a 6) | [`docs/fase4`](docs/fase4/README.md) |
+| Arquitetura (componentes, sequência, dados, ADRs 005–010) | [`docs/architecture`](docs/architecture/README.md) |
+| Contratos de mensagens e máquina de estados da saga | [`docs/contratos-mensagens.md`](docs/contratos-mensagens.md) |
+| Observabilidade (OpenTelemetry → New Relic, dashboard, alertas) | [`docs/observability`](docs/observability/README.md) |
+| Sistema completo local, seed e saga de ponta a ponta | [Sistema completo](#sistema-completo-os-3-microsserviços) e [Observabilidade](#observabilidade-fase-4) |
+| Collection Postman e environments | [`postman/`](postman) |
+| Documento de entrega (PDF) e roteiro do vídeo | [`docs/entrega-fase4.md`](docs/entrega-fase4.md) · [`docs/roteiro-video-fase4.md`](docs/roteiro-video-fase4.md) |
+| Outros serviços | [`oficina-billing-service`](https://github.com/Duds27/oficina-billing-service) · [`oficina-execution-service`](https://github.com/Duds27/oficina-execution-service) |
+| Plataforma | [`oficina-infra-k8s`](https://github.com/Duds27/oficina-infra-k8s) · [`oficina-lambda-auth`](https://github.com/Duds27/oficina-lambda-auth) · [`oficina-infra-database`](https://github.com/Duds27/oficina-infra-database) |
+
+### Responsabilidades
+
+- Clientes, veículos e o catálogo de serviços e peças, com o estoque.
+- Abertura, itens, consulta e histórico da OS.
+- **Orquestração da saga.** A máquina de estados do MassTransit, gravada no MySQL junto com a OS, manda um comando para cada passo e aplica as compensações.
+- Endpoint interno `GET /internal/clientes/por-cpf/{cpf}` para a Lambda de autenticação, protegido pelo header `X-Internal-Key` e fora do API Gateway.
+
+**Não é dele:**
+
+- o orçamento, a aprovação e o pagamento, do [billing-service](https://github.com/Duds27/oficina-billing-service);
+- a fila da oficina, o diagnóstico e o reparo, do [execution-service](https://github.com/Duds27/oficina-execution-service);
+- o login do cliente por CPF, da [Lambda](https://github.com/Duds27/oficina-lambda-auth).
+
+### Arquitetura do serviço
+
+```mermaid
+flowchart LR
+  subgraph entrada[Entrada]
+    api["API REST<br/>clientes, veículos, serviços, peças, OS"]
+    interno["/internal/clientes<br/>(Lambda)"]
+    eventos["Saga: consome os eventos<br/>fila os-ordem-servico-saga"]
+  end
+  subgraph app[Application]
+    casos["Casos de uso"]
+    saga["OrdemServicoStateMachine<br/>(MassTransit)"]
+  end
+  dominio["Domain<br/>OrdemServico, Cliente, Veiculo, Peca, Servico"]
+  subgraph infra[Infrastructure]
+    db[("MySQL 8.4<br/>OS + saga + outbox/inbox")]
+    verif["VerificadorPrazosSaga<br/>(PrazoExpirado)"]
+  end
+  api & interno --> casos --> dominio
+  eventos --> saga --> dominio
+  casos & saga --> db
+  verif --> saga
+  saga -->|comandos pelo outbox| mq[("RabbitMQ")]
+  mq -->|eventos| eventos
+```
+
+### Mensagens
+
+| Direção | Mensagem | Fila / exchange | Quando |
+| --- | --- | --- | --- |
+| Envia | `SolicitarDiagnostico`, `IniciarExecucao`, `CancelarExecucao` | `execution-solicitar-diagnostico`, `execution-iniciar-execucao`, `execution-cancelar-execucao` | Abertura da OS, pagamento confirmado, compensações |
+| Envia | `GerarOrcamento`, `CancelarOrcamento`, `EstornarPagamento` | `billing-gerar-orcamento`, `billing-cancelar-orcamento`, `billing-estornar-pagamento` | Diagnóstico concluído, C2 e C3 |
+| Consome | `DiagnosticoIniciado`, `DiagnosticoConcluido`, `ExecucaoIniciada`, `ExecucaoRejeitada`, `ExecucaoFinalizada` | exchanges `oficina.<evento>.v1` | Andamento no execution-service |
+| Consome | `OrcamentoGerado`, `OrcamentoAprovado`, `OrcamentoRecusado`, `PagamentoConfirmado`, `PagamentoRecusado`, `PagamentoEstornado` | exchanges `oficina.<evento>.v1` | Andamento no billing-service |
+| Interno | `OrdemServicoAberta`, `PrazoExpirado`, `CancelamentoSolicitado` | exchanges `oficina.<evento>.v1` | Início da saga, prazos vencidos, cancelamento pela API |
+
+### Endpoints
+
+A lista completa está em [Endpoints da API](#endpoints-da-api), e o Swagger fica em `/swagger` no ambiente de
+desenvolvimento. O contrato vai versionado em [`docs/openapi.json`](docs/openapi.json), conferido no CI. Na Fase
+4 entraram:
+
+- `GET /api/ordens-servico/{id}/saga`, com o estado da saga;
+- `GET /api/ordens-servico/{id}/historico`;
+- `POST /api/ordens-servico/{id}/cancelar`, que pede o cancelamento à saga (`CancelamentoSolicitado`).
+
+### Rodar e testar
+
+- **Só o os-service:** [Como Executar](#como-executar).
+- **Os 3 serviços:** [Sistema completo](#sistema-completo-os-3-microsserviços), com o `docker-compose.full.yml`, o seed e a saga de ponta a ponta.
+- **Testes:** `dotnet test OficinaMecanicaBackend/OficinaMecanicaBackend.sln --settings OficinaMecanicaBackend/coverlet.runsettings`. São unitários, da máquina de estados, de integração com MySQL e RabbitMQ (Testcontainers) e BDD.
+
+### Saga: estratégia e justificativa
+
+A OS atravessa os 3 serviços numa saga **orquestrada**:
+
+- **o os-service guarda o estado:** é a máquina de estados do MassTransit, gravada no MySQL;
+- **o os-service manda os comandos:** um para cada passo;
+- **os outros dois só respondem:** o billing e o execution executam o comando e publicam eventos, sem conhecer a saga.
+
+**Por quê** ([ADR-006](https://github.com/Duds27/oficina-os-service/blob/main/docs/architecture/adrs/ADR-006-saga-orquestrada.md)):
+
+- o fluxo e as compensações ficam num lugar só;
+- dá para responder "em que passo esta OS parou?" (`GET /api/ordens-servico/{id}/saga`);
+- o fluxo inteiro pode ser testado de ponta a ponta.
+
+Com coreografia, a lógica de compensação ficaria espalhada por três repositórios.
+
+**Papel deste serviço:** orquestrador. Guarda o estado de cada OS, manda os comandos e aplica as compensações. Também mexe no estoque (devolve as peças) e no status da OS, na mesma transação da saga.
+
+**Compensações:**
+
+- C1: orçamento recusado;
+- C2: pagamento recusado ou prazo vencido;
+- C3: execução rejeitada, com estorno.
+
+Os diagramas de cada uma estão nos [diagramas de sequência](https://github.com/Duds27/oficina-os-service/blob/main/docs/architecture/sequence-diagrams.md). O
+catálogo das mensagens, com as regras de eventos fora de ordem, está nos [contratos](https://github.com/Duds27/oficina-os-service/blob/main/docs/contratos-mensagens.md).
+
+### Pipeline
+
+```mermaid
+flowchart LR
+  pr["PR para a main"] --> ci["CI: build, testes (unitários e integração com Testcontainers),<br/>cobertura ≥ 80%, SonarCloud, OpenAPI e docker build"]
+  ci -->|checks obrigatórios + 1 aprovação| main["merge na main"]
+  main -->|PR main → homolog| homolog["push em homolog"]
+  homolog --> cd["CD: CI de novo → imagem no ECR → Secret do Secrets Manager<br/>→ kubectl apply (overlay aws) → rollout → smoke test"]
+  cd --> eks[("EKS")]
+```
+
+### Evidências de cobertura
+
+![Cobertura de linhas](docs/evidencias/badge_linecoverage.svg) ![Cobertura de ramos](docs/evidencias/badge_branchcoverage.svg)
+
+O relatório do CI da `main`, consolidado pelo ReportGenerator, está em [`docs/evidencias`](docs/evidencias/README.md),
+com o run e o commit de origem. O SonarCloud está em [Duds27_oficina-os-service](https://sonarcloud.io/summary/new_code?id=Duds27_oficina-os-service).
+O gate do CI derruba o build abaixo de 80% de linhas.
+
+---
+
 ## Fase 3 — Operação Corporativa em Nuvem (segurança, escala e observabilidade)
 
 A Fase 3 leva a aplicação a operação corporativa na **AWS**, com autenticação por CPF via
@@ -112,6 +247,8 @@ flowchart LR
 
 ## Sumário
 
+- [Fase 4 — Microsserviços e saga orquestrada](#fase-4--microsserviços-e-saga-orquestrada)
+- [Fase 3 — Operação Corporativa em Nuvem](#fase-3--operação-corporativa-em-nuvem-segurança-escala-e-observabilidade)
 - [Fase 2 — Infraestrutura, Escalabilidade e Automação](#fase-2--infraestrutura-escalabilidade-e-automação)
 - [Dicionário de Linguagem Ubíqua](#dicionário-de-linguagem-ubíqua)
 - [Stack Tecnológica](#stack-tecnológica)
