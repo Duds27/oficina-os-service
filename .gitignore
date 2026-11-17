@@ -8,3 +8,8 @@ infra/.terraform.lock.hcl
 
 # Saída do coletor OpenTelemetry local (docker-compose.full.yml, perfil observabilidade)
 observabilidade/saida/
+
+# Terraform do New Relic (docs/observability/terraform)
+docs/observability/terraform/.terraform/
+docs/observability/terraform/.terraform.lock.hcl
+docs/observability/terraform/*.tfstate*

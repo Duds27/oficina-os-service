@@ -1,96 +1,58 @@
+# Observabilidade da Fase 4 no New Relic: dashboard "Saga de OS" e alertas (Etapa 5, 5.5 e 5.6).
+# Os dados chegam por OTLP (traces, métricas e logs dos 3 serviços) e pelo Prometheus agent do
+# nri-bundle (métricas do RabbitMQ).
+#
+#   terraform init
+#   terraform apply -var="newrelic_account_id=<id>" -var="newrelic_api_key=<user key>"
+#
+# A User key (NRAK-...) é a da API NerdGraph, não a license key de ingestão. Passe-a por
+# TF_VAR_newrelic_api_key, nunca num arquivo versionado.
 terraform {
   required_version = ">= 1.5.0"
+
   required_providers {
     newrelic = {
       source  = "newrelic/newrelic"
-      version = "~> 3.43"
+      version = "~> 3.101.8"
     }
   }
 }
 
 provider "newrelic" {
   account_id = var.newrelic_account_id
-  api_key    = var.newrelic_api_key # NerdGraph User key
-  region     = var.newrelic_region  # US | EU
+  api_key    = var.newrelic_api_key
+  region     = var.newrelic_region
 }
 
-variable "newrelic_account_id" { type = number }
-variable "newrelic_api_key" {
-  type      = string
-  sensitive = true
+variable "newrelic_account_id" {
+  type        = number
+  description = "Id da conta no New Relic."
 }
+
+variable "newrelic_api_key" {
+  type        = string
+  sensitive   = true
+  description = "User key da API NerdGraph (NRAK-...)."
+}
+
 variable "newrelic_region" {
   type    = string
   default = "US"
-}
-variable "app_name" {
-  type    = string
-  default = "oficina-mecanica-api"
-}
-variable "notification_channel_ids" {
-  type    = list(string)
-  default = []
-}
 
-# ───────────────────────────── Política de alertas ─────────────────────────────
-resource "newrelic_alert_policy" "oficina" {
-  name = "Oficina Mecânica — Fase 3"
-}
-
-# Latência das APIs (p95 > 1s por 5 min).
-resource "newrelic_nrql_alert_condition" "latencia" {
-  policy_id          = newrelic_alert_policy.oficina.id
-  name               = "Latência alta das APIs (p95)"
-  type               = "static"
-  enabled            = true
-  aggregation_window = 60
-
-  nrql {
-    query = "SELECT percentile(duration, 95) FROM Transaction WHERE appName = '${var.app_name}'"
-  }
-
-  critical {
-    operator              = "above"
-    threshold             = 1.0
-    threshold_duration    = 300
-    threshold_occurrences = "all"
+  validation {
+    condition     = contains(["US", "EU"], var.newrelic_region)
+    error_message = "Região US ou EU."
   }
 }
 
-# Falha no processamento de ordens de serviço.
-resource "newrelic_nrql_alert_condition" "os_falha" {
-  policy_id = newrelic_alert_policy.oficina.id
-  name      = "Falha no processamento de OS"
-  type      = "static"
-  enabled   = true
-
-  nrql {
-    query = "SELECT count(*) FROM Log WHERE Evento = 'os_falha_processamento'"
-  }
-
-  critical {
-    operator              = "above"
-    threshold             = 0
-    threshold_duration    = 300
-    threshold_occurrences = "at_least_once"
-  }
+variable "ambiente" {
+  type        = string
+  default     = "homolog"
+  description = "deployment.environment dos serviços que os alertas olham (homolog | prod)."
 }
 
-# Saturação de CPU dos pods (> 85% do request por 10 min).
-resource "newrelic_nrql_alert_condition" "cpu" {
-  policy_id = newrelic_alert_policy.oficina.id
-  name      = "CPU alta nos pods do EKS"
-  type      = "static"
-  enabled   = true
-
-  nrql {
-    query = "SELECT average(cpuCoresUtilization) FROM K8sContainerSample WHERE clusterName LIKE 'oficina-%'"
-  }
-
-  critical {
-    operator              = "above"
-    threshold             = 85
-    threshold_duration    = 600
-    threshold_occurrences = "all"
-  }
+variable "email_alertas" {
+  type        = string
+  default     = ""
+  description = "E-mail que recebe os incidentes. Vazio: os alertas só aparecem no New Relic."
 }

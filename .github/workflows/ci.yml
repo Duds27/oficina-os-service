@@ -121,3 +121,30 @@ jobs:
 
       - name: Docker build
         run: docker build -t oficina-os-service:ci .
+
+  # Dashboard e alertas do New Relic (docs/observability/terraform). Os testes usam provider
+  # mockado: não precisam de conta no New Relic.
+  terraform:
+    name: terraform
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs/observability/terraform
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+
+      - name: Format
+        run: terraform fmt -check -recursive
+
+      - name: Init (sem backend)
+        run: terraform init -backend=false -input=false
+
+      - name: Validate
+        run: terraform validate
+
+      - name: Test
+        run: terraform test
