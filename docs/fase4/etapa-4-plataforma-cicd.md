@@ -120,7 +120,15 @@ jobs:
   - Sem `SONAR_TOKEN` (PR de fork ou do Dependabot), o Sonar é pulado.
   - O job do os-service foi renomeado de `build-test` para `build-test-quality`, o nome do *required check* nos 3 repos.
   - Cobertura local em 2026-11-16: os-service 95,5% (237 testes), billing 95,8% (182) e execution 97,4% (130).
-  - Falta a primeira execução no GitHub, que dispara no PR.
+  - **Primeira execução no GitHub (PRs da Etapa 4, 2026-11-17):**
+    - No os-service, o quality gate passou: 92,8% de cobertura no código novo.
+    - No billing e no execution, ele reprovou com nota C de segurança. Lá o scanner roda na raiz do repo e analisa também `.github/workflows` e `k8s/`; no os-service, roda dentro de `OficinaMecanicaBackend`.
+    - Os apontamentos:
+      - actions de terceiros por tag e não pelo SHA do commit (S7637);
+      - `id-token: write` e `pull-requests: write` no workflow inteiro, e não no job (S8233);
+      - `http://` no ConfigMap (S5332).
+    - A correção está na branch `fix/etapa-4-sonar` dos 3 serviços. As actions de terceiros ficaram fixadas por SHA, as permissões de escrita foram para o job, e o `ASPNETCORE_URLS` saiu: a imagem `aspnet:8.0` já escuta na 8080 pelo `ASPNETCORE_HTTP_PORTS`.
+    - Os dois PRs entraram com o check vermelho porque a proteção da `main` não vale para administradores (`enforce_admins: false`).
 
 ### 4.5 CD (`.github/workflows/cd.yml`)
 
@@ -230,7 +238,10 @@ Um commit para cada, nas branches `feat/etapa-4-plataforma` (infra-k8s e os 3 se
 ## Pronto quando
 
 - [ ] Um PR que reduz a cobertura abaixo de 80% ou reprova o quality gate **não pode ser mergeado**.
-  - O CI já falha nos dois casos. Falta a proteção da `main` (4.7), que torna o job obrigatório, e a primeira execução com o SonarCloud no GitHub.
+  - O CI falha nos dois casos: no billing e no execution, o quality gate reprovou de verdade nos PRs da Etapa 4 (ver 4.4).
+  - A `main` dos 3 serviços já exige PR com 1 aprovação, branch atualizada e o job obrigatório. Falta o seguinte:
+    - **os-service:** trocar o check obrigatório `Build e Testes` (nome antigo do job) por `build-test-quality`;
+    - **administradores:** valer a regra também para eles (`enforce_admins`), sem o que o merge com check vermelho continua possível.
 - [ ] Um merge em `homolog` de qualquer serviço builda, testa, publica a imagem e faz o rollout no EKS sem passo manual.
 - [ ] Os 3 serviços + RabbitMQ rodam no EKS, acessíveis pelo API Gateway com JWT. O webhook é acessível sem JWT.
   - Os dois itens acima dependem dos applies e dos Environments (ver "Primeiro deploy na AWS"). No kind, os 3 serviços e o RabbitMQ já rodaram a saga completa.

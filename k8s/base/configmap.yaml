@@ -7,7 +7,8 @@ metadata:
 data:
   # Configuração não sensível. O .NET usa "__" para aninhar chaves (RabbitMq:Host → RabbitMq__Host).
   ASPNETCORE_ENVIRONMENT: "Production"
-  ASPNETCORE_URLS: "http://+:8080"
+  # Porta: a imagem mcr.microsoft.com/dotnet/aspnet:8.0 já define ASPNETCORE_HTTP_PORTS=8080. O TLS
+  # termina no API Gateway; dentro da VPC o tráfego até o pod é HTTP.
   # GC de workstation: bem menos memória por pod que o de servidor, padrão do ASP.NET.
   DOTNET_gcServer: "0"
   # Broker compartilhado (namespace messaging). Usuário e senha vêm do Secret.
