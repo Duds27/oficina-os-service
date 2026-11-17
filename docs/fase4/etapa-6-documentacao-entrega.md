@@ -84,11 +84,11 @@ Veio da [Etapa 5](etapa-5-observabilidade.md#pronto-quando) em 2026-11-17 (e, an
   - Pastas: Autenticação → Cadastros → Fluxo completo da OS → Cenários de falha.
   - Scripts que encadeiam variáveis (`token`, `osId`, `orcamentoId`, `pagamentoId`).
   - Environments `local` e `aws`.
-- [ ] Rodar a collection com Newman contra o compose para garantir que está atualizada.
+- [x] Rodar a collection com Newman contra o compose para garantir que está atualizada.
 - **Na implementação:**
   - **OpenAPI.** O CI dos 3 serviços gera o `docs/openapi.json` com o Swashbuckle CLI e falha se o arquivo versionado estiver diferente.
   - **Collection.** São 42 requisições. Os passos assíncronos esperam o estado com novas tentativas, e o login pela Lambda é pulado quando o `authUrl` está vazio.
-  - **Newman.** O workflow manual `e2e.yml` roda a collection depois da saga de ponta a ponta. A rodada local, contra o `docker-compose.full.yml`, ficou pendente porque o Docker estava parado.
+  - **Newman.** O workflow manual `e2e.yml` roda a collection depois da saga de ponta a ponta. Em 2026-11-17, contra o `docker-compose.full.yml` com a `main` dos 3 serviços: a saga passou em 13 de 13, e o Newman 6.2.3 fez 48 requisições (contando as novas tentativas) com as 44 asserções verdes. As novas tentativas usam o `pm.execution.setNextRequest`, porque o `postman.setNextRequest` foi descontinuado.
   - **Na AWS.** As requisições "Simular pagamento" só existem com o gateway Fake. Com o Mercado Pago, paga-se pelo `linkPagamento` do orçamento, como no [roteiro do vídeo](../roteiro-video-fase4.md).
 
 ### 6.4 Vídeo (≤ 15 min, YouTube/Vimeo público ou não listado)
