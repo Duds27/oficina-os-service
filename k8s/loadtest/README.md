@@ -1,12 +1,12 @@
 # Teste de carga — demonstração do HPA
 
 Dois geradores de carga para mostrar a **escalabilidade automática** (o HPA
-escalando os pods da API de 2 até 10 réplicas sob CPU).
+escalando os pods do os-service sob CPU: de 1 a 5 réplicas no kind, de 1 a 3 no EKS).
 
 Em um terminal, acompanhe o autoscaling:
 
 ```bash
-kubectl -n oficina get hpa api pods -w
+kubectl -n oficina-os get hpa os-service -w
 ```
 
 ## Opção A — dentro do cluster (não precisa de nada instalado)
@@ -14,7 +14,7 @@ kubectl -n oficina get hpa api pods -w
 ```bash
 kubectl apply -f k8s/loadtest/load-generator.yaml
 # ... observe as réplicas subirem ...
-kubectl -n oficina delete -f k8s/loadtest/load-generator.yaml   # para a carga
+kubectl -n oficina-os delete -f k8s/loadtest/load-generator.yaml   # para a carga
 ```
 
 Para mais pressão, aplique o manifesto mais de uma vez com nomes diferentes
@@ -25,7 +25,7 @@ Para mais pressão, aplique o manifesto mais de uma vez com nomes diferentes
 Requer [k6](https://k6.io/) instalado e um `port-forward` ativo:
 
 ```bash
-kubectl -n oficina port-forward svc/api 8080:80   # em outro terminal
+kubectl -n oficina-os port-forward svc/os-service 8080:80   # em outro terminal
 k6 run k8s/loadtest/load-test.js
 # alvo alternativo:
 k6 run -e BASE_URL=http://localhost:8080 k8s/loadtest/load-test.js
@@ -34,8 +34,8 @@ k6 run -e BASE_URL=http://localhost:8080 k8s/loadtest/load-test.js
 ## O que observar
 
 ```
-NAME   REFERENCE        TARGETS         MINPODS  MAXPODS  REPLICAS
-api    Deployment/api   cpu: 180%/70%   2        10       2 -> 5 -> 8 ...
+NAME         REFERENCE               TARGETS         MINPODS  MAXPODS  REPLICAS
+os-service   Deployment/os-service   cpu: 180%/70%   1        5        1 -> 2 -> 4 ...
 ```
 
 - As métricas levam ~15–30 s para refletir (metrics-server + intervalo do HPA).

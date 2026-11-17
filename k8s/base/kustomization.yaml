@@ -1,9 +1,19 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Núcleo cloud-agnóstico: namespace, Deployment/Service da API e HPA.
-# ConfigMap, Secret e banco são definidos por overlay (local vs AWS).
+# Núcleo do os-service: clientes, veículos, catálogo, OS e orquestração da saga.
+# O namespace oficina-os é criado pelo oficina-infra-k8s na AWS e pelo overlay local no kind.
+# Secret (os-service-secrets) e banco ficam nos overlays.
+namespace: oficina-os
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: oficina-mecanica
+    includeSelectors: false
+
 resources:
-  - 00-namespace.yaml
-  - 30-api.yaml
-  - 40-hpa.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml

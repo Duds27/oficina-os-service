@@ -1,0 +1,56 @@
+name: Kind
+
+# Sobe o overlay local (k8s/overlays/local) num cluster kind dentro do runner e espera
+# o rollout: confere que os manifestos aplicam e que o os-service fica pronto com o MySQL
+# e o RabbitMQ do overlay. Até a Fase 3 este era o cd.yml, que também publicava a imagem no
+# GHCR. Desde a Fase 4 a imagem vai para o ECR pelo cd.yml (deploy no EKS).
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "k8s/**"
+      - "OficinaMecanicaBackend/Dockerfile"
+      - ".github/workflows/kind.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kind:
+    name: Deploy no kind (overlay local)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build da imagem Docker
+        run: docker build -t oficina-os-service:local OficinaMecanicaBackend
+
+      - name: Criar cluster kind
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: oficina
+
+      - name: Carregar imagem no kind
+        run: kind load docker-image oficina-os-service:local --name oficina
+
+      - name: Instalar metrics-server (necessário para o HPA)
+        run: |
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
+          kubectl -n kube-system patch deployment metrics-server --type=json \
+            -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+
+      - name: Deploy (MySQL + RabbitMQ + os-service + HPA)
+        run: |
+          kubectl apply -k k8s/overlays/local
+          kubectl -n messaging rollout status deployment/rabbitmq --timeout=240s
+          kubectl -n oficina-os rollout status statefulset/mysql --timeout=240s
+          kubectl -n oficina-os rollout status deployment/os-service --timeout=300s
+
+      - name: Verificar recursos
+        if: always()
+        run: |
+          kubectl get pods -A -o wide
+          kubectl -n oficina-os get svc,hpa
+          kubectl -n oficina-os logs deployment/os-service --tail=50 || true

@@ -13,7 +13,7 @@ variable "worker_count" {
 variable "image_name" {
   description = "Nome/tag da imagem da API a ser carregada no kind."
   type        = string
-  default     = "oficina-mecanica-api:local"
+  default     = "oficina-os-service:local"
 }
 
 variable "build_and_load_image" {

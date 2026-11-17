@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: os-service-config
+  labels:
+    app: os-service
+data:
+  # Configuração não sensível. O .NET usa "__" para aninhar chaves (RabbitMq:Host → RabbitMq__Host).
+  ASPNETCORE_ENVIRONMENT: "Production"
+  ASPNETCORE_URLS: "http://+:8080"
+  # GC de workstation: bem menos memória por pod que o de servidor, padrão do ASP.NET.
+  DOTNET_gcServer: "0"
+  # Broker compartilhado (namespace messaging). Usuário e senha vêm do Secret.
+  RabbitMq__Host: "rabbitmq.messaging.svc.cluster.local"
+  RabbitMq__VirtualHost: "oficina"
+  Jwt__Issuer: "OficinaMecanicaBackend"
+  Jwt__Audience: "OficinaMecanicaBackend"
+  Jwt__AdminUsername: "admin"
+  Jwt__ExpiresInMinutes: "60"
+  # Prazos da saga (aprovação do orçamento, pagamento e execução).
+  Saga__Prazos__Aprovacao: "2.00:00:00"
+  Saga__Prazos__Pagamento: "2.00:00:00"
+  Saga__Prazos__Execucao: "2.00:00:00"

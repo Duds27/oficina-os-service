@@ -5,7 +5,7 @@ import { check, sleep } from 'k6';
 // Sobe gradualmente o número de usuários virtuais (VUs) para forçar o consumo
 // de CPU dos pods acima do alvo do HPA (70%) e observar o scale-up.
 //
-// Alvo padrão: http://localhost:8080 (via `kubectl -n oficina port-forward svc/api 8080:80`).
+// Alvo padrão: http://localhost:8080 (via `kubectl -n oficina-os port-forward svc/os-service 8080:80`).
 // Sobrescreva com: k6 run -e BASE_URL=http://SEU_HOST:PORTA load-test.js
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';

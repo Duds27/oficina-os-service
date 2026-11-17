@@ -1,12 +1,11 @@
-# Service headless para o StatefulSet do MySQL (DNS estável: "mysql").
+# MySQL de desenvolvimento (StatefulSet com volume). Na AWS, o banco é o RDS do oficina-infra-database.
 apiVersion: v1
 kind: Service
 metadata:
   name: mysql
-  namespace: oficina
+  namespace: oficina-os
   labels:
     app: mysql
-    app.kubernetes.io/part-of: oficina-mecanica
 spec:
   clusterIP: None
   selector:
@@ -14,16 +13,14 @@ spec:
   ports:
     - name: mysql
       port: 3306
-      targetPort: 3306
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: mysql
-  namespace: oficina
+  namespace: oficina-os
   labels:
     app: mysql
-    app.kubernetes.io/part-of: oficina-mecanica
 spec:
   serviceName: mysql
   replicas: 1
@@ -38,7 +35,6 @@ spec:
       containers:
         - name: mysql
           image: mysql:8.4
-          args: ["--mysql-native-password=ON"]
           ports:
             - name: mysql
               containerPort: 3306
@@ -46,39 +42,28 @@ spec:
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: api-secrets
+                  name: os-service-secrets
                   key: MYSQL_ROOT_PASSWORD
             - name: MYSQL_DATABASE
-              valueFrom:
-                configMapKeyRef:
-                  name: api-config
-                  key: MYSQL_DATABASE
+              value: "OficinaMecanica"
           resources:
             requests:
               cpu: "100m"
-              memory: "256Mi"
+              memory: "384Mi"
             limits:
-              cpu: "500m"
-              memory: "512Mi"
+              memory: "768Mi"
           readinessProbe:
+            # Ping por TCP: durante o boot o MySQL sobe um servidor temporário só por socket.
             exec:
-              command: ["mysqladmin", "ping", "-h", "127.0.0.1", "--protocol=tcp", "-uroot", "-p$(MYSQL_ROOT_PASSWORD)"]
+              command: ["sh", "-c", "mysqladmin ping -h 127.0.0.1 -P 3306 --protocol=tcp -uroot -p\"$MYSQL_ROOT_PASSWORD\""]
             initialDelaySeconds: 15
             periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 10
-          livenessProbe:
-            exec:
-              command: ["mysqladmin", "ping", "-h", "127.0.0.1", "--protocol=tcp", "-uroot", "-p$(MYSQL_ROOT_PASSWORD)"]
-            initialDelaySeconds: 60
-            periodSeconds: 20
-            timeoutSeconds: 5
           volumeMounts:
-            - name: mysql-data
+            - name: data
               mountPath: /var/lib/mysql
   volumeClaimTemplates:
     - metadata:
-        name: mysql-data
+        name: data
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:

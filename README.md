@@ -56,7 +56,7 @@ escalabilidade**, incorporando práticas modernas de infraestrutura e automaçã
 | **Conteinerização**                                        | `Dockerfile` (multi-stage, usuário não-root) + `docker-compose.yml` para desenvolvimento local.                                                                                                                                                   |
 | **Kubernetes**                                             | Manifestos em [`/k8s`](k8s): Namespace, ConfigMap, Secret, MySQL (StatefulSet + PVC), API (Deployment + Service com probes) e **HPA**.                                                                                                            |
 | **IaC (Terraform)**                                        | Scripts em [`/infra`](infra) que provisionam um cluster **kind**, instalam o metrics-server, buildam/carregam a imagem e aplicam os manifestos.                                                                                                   |
-| **CI/CD**                                                  | GitHub Actions em [`.github/workflows`](.github/workflows): `ci.yml` (build + testes) e `cd.yml` (build/push da imagem + deploy num kind no runner).                                                                                              |
+| **CI/CD**                                                  | GitHub Actions em [`.github/workflows`](.github/workflows): `ci.yml` (build + testes) e `kind.yml` (deploy do overlay local num kind no runner; até a Fase 3 era o `cd.yml`, que também publicava a imagem no GHCR).                                                                                              |
 
 ### Arquitetura de infraestrutura
 
@@ -288,8 +288,8 @@ kubectl get nodes
 
 # 5. Build da imagem e carga no cluster kind
 cd <path_to_this_project> # precisa estar no root deste projeto
-docker build -t oficina-mecanica-api:local OficinaMecanicaBackend
-kind load docker-image oficina-mecanica-api:local --name oficina
+docker build -t oficina-os-service:local OficinaMecanicaBackend
+kind load docker-image oficina-os-service:local --name oficina
 
 # 6. Instal o metrics-server (necessário para o HPA)
 kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
@@ -298,12 +298,12 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 kubectl apply -k k8s/overlays/local
 
 # 8. Aguardar e verificar
-kubectl -n oficina rollout status statefulset/mysql
-kubectl -n oficina rollout status deploy/api
-kubectl -n oficina get pods,svc,hpa
+kubectl -n oficina-os rollout status statefulset/mysql
+kubectl -n oficina-os rollout status deploy/os-service
+kubectl -n oficina-os get pods,svc,hpa
 
 # 9. Acesso local a API
-kubectl -n oficina port-forward svc/api 8080:80   # http://localhost:8080/swagger
+kubectl -n oficina-os port-forward svc/os-service 8080:80   # http://localhost:8080/swagger
 
 # 10. Checar no browser
 http://localhost:8080/swagger
@@ -313,7 +313,7 @@ http://localhost:8080/health/ready
 kind delete cluster --name oficina
 ```
 
-Para observar a **escalabilidade automática**, gere carga contra o Service e acompanhe `kubectl -n oficina get hpa api -w`.
+Para observar a **escalabilidade automática**, gere carga contra o Service e acompanhe `kubectl -n oficina-os get hpa os-service -w`.
 
 ---
 

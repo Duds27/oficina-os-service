@@ -2,13 +2,13 @@
 # Service interno da API em paralelo para forçar consumo de CPU e disparar o HPA.
 #
 #   kubectl apply -f k8s/loadtest/load-generator.yaml
-#   kubectl -n oficina get hpa api pods -w      # observe o scale-up
-#   kubectl -n oficina delete -f k8s/loadtest/load-generator.yaml   # para a carga
+#   kubectl -n oficina-os get hpa os-service -w      # observe o scale-up
+#   kubectl -n oficina-os delete -f k8s/loadtest/load-generator.yaml   # para a carga
 apiVersion: v1
 kind: Pod
 metadata:
   name: load-generator
-  namespace: oficina
+  namespace: oficina-os
   labels:
     app: load-generator
 spec:
@@ -21,6 +21,6 @@ spec:
         - -c
         - >
           for i in 1 2 3 4 5 6 7 8; do
-            (while true; do wget -q -O- http://api/health/ready >/dev/null 2>&1; done) &
+            (while true; do wget -q -O- http://os-service/health/ready >/dev/null 2>&1; done) &
           done;
           wait
