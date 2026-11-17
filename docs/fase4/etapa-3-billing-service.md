@@ -113,14 +113,14 @@ Gerar o orçamento e enviá-lo ao cliente, registrar a aprovação ou recusa, co
   - Webhook duplicado.
   - Falha temporária da API do MP (retry).
   - Estorno.
-  - **Pendente:** os payloads seguem a documentação do Mercado Pago. Os reais do sandbox entram quando o spike S3 for feito.
+  - Os payloads seguem a documentação do Mercado Pago. Os reais do sandbox entram com o spike S3, que foi para a [Etapa 4](etapa-4-plataforma-cicd.md#49-mercado-pago-no-sandbox).
   - Também ponta a ponta com RabbitMQ 4.1 e um bus no papel do os-service, do pedido de orçamento ao estorno.
 - [x] **Contrato:** snapshot das mensagens (as 9 do catálogo e o evento interno), com o serializador do MassTransit.
 - [x] Cobertura ≥ 80%: cerca de 96% de linhas. O `coverlet.runsettings` exclui só as migrations, que são código gerado.
 
 ## PRs sugeridos
 
-Os seis estão na branch `feat/etapa-3-billing-service` do `oficina-billing-service`, um commit para cada, mais um de documentação:
+Os seis entraram na `main` do `oficina-billing-service` pelo PR #2, um commit para cada, mais um de documentação (o PR #1 foi fechado e substituído pelo #2):
 
 1. **feat: domínio Orcamento/Pagamento + persistência PostgreSQL**
 2. **feat: consumers da saga + outbox (gateway Fake)**: libera o marco da semana 3
@@ -134,9 +134,12 @@ Os seis estão na branch `feat/etapa-3-billing-service` do `oficina-billing-serv
 - [x] No compose, com o gateway Fake: `GerarOrcamento` → aprovação → simulação de pagamento → `PagamentoConfirmado` chega ao `os-service`.
   - Conferido em 2026-11-16 com os três serviços no mesmo RabbitMQ (`docker-compose.integrado.yml` no execution e no billing): OS aberta → diagnóstico → orçamento → aprovação → pagamento simulado → execução → saga `Concluida`.
   - Na mesma rodada, uma OS com o prazo de aprovação vencido levou a saga e o orçamento a `Cancelado` (C2).
-- [ ] No sandbox: preferência criada, pagamento com cartão de teste, webhook recebido e validado, `PagamentoConfirmado` publicado e estorno realizado.
-  - Depende do spike S3: conta de teste do Mercado Pago (vendedor e comprador), token de teste e segredo do webhook, e uma URL pública para o webhook (túnel ou API Gateway).
-  - O mesmo fluxo já passa contra o Mercado Pago simulado no WireMock.
 - [x] Um cliente não aprova orçamento de outro (testes de unidade e da API: 403).
-- [ ] CI verde com cobertura ≥ 80%.
-  - Verde localmente, com 149 testes unitários, 33 de integração e cobertura em torno de 96%. Falta rodar no CI, que dispara no PR para a `main`.
+- [x] CI verde com cobertura ≥ 80%.
+  - No CI do PR #2 e da `main`: 182 testes (149 unitários e 33 de integração) e os jobs `build-test-quality` e `terraform` verdes. Cobertura de 95,7% de linhas, calculada do relatório publicado pelo próprio CI. O gate de cobertura entra na Etapa 4.
+- **Movido para a [Etapa 4](etapa-4-plataforma-cicd.md#49-mercado-pago-no-sandbox) em 2026-11-16:** no sandbox, preferência criada, pagamento com cartão de teste, webhook recebido e validado, `PagamentoConfirmado` publicado e estorno realizado.
+  - Depende do spike S3: conta de teste do Mercado Pago (vendedor e comprador), token de teste e segredo do webhook, e uma URL pública para o webhook.
+  - A Etapa 4 cria a rota pública `POST /webhooks/mercadopago` no API Gateway, então o teste roda no ambiente de verdade, sem túnel.
+  - O mesmo fluxo já passa contra o Mercado Pago simulado no WireMock.
+
+**Etapa concluída em 2026-11-16.**
