@@ -5,3 +5,6 @@ infra/terraform.tfstate
 infra/oficina-config
 infra/terraform.tfstate.backup
 infra/.terraform.lock.hcl
+
+# Saída do coletor OpenTelemetry local (docker-compose.full.yml, perfil observabilidade)
+observabilidade/saida/

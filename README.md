@@ -282,6 +282,39 @@ docker compose -f docker-compose.full.yml down -v
   `docker-compose.yml` do `OficinaMecanicaBackend`.
 - Validado em 2026-11-16: build do zero, seed e saga completa (13 de 13).
 
+### Observabilidade (Fase 4)
+
+Os 3 serviços usam o OpenTelemetry .NET (no os-service, `src/OficinaMecanica.API/Observabilidade/`) e
+exportam traces, métricas e logs por OTLP quando `OTEL_EXPORTER_OTLP_ENDPOINT` existe. No EKS, o CD
+aponta para o New Relic quando há license key. O agente .NET do New Relic da Fase 3 saiu da imagem.
+
+- **Traces:** HTTP, HttpClient, MassTransit (o contexto vai nos headers da mensagem) e MySQL.
+- **Métricas da saga** (Meter `Oficina.Saga`):
+  - `saga.iniciada`, `saga.concluida`;
+  - `saga.compensada{motivo}`, em que o motivo é o evento que disparou a compensação (ex.: `OrcamentoRecusado`, `PrazoExpirado.AguardandoPagamento`);
+  - `saga.etapa.duracao{etapa}` (s), o tempo em cada estado (coluna `EstadoDesde` da saga);
+  - `saga.prazos.atrasados`: sagas com prazo vencido há mais de duas rodadas do verificador.
+- **Logs:**
+  - todos levam `trace.id` e `span.id`;
+  - os do consumo levam `MessageType`, `CorrelationId` e `NumeroOS`;
+  - os da saga levam também o `EstadoSaga`.
+
+Para ver tudo local, suba o perfil `observabilidade`, que inclui um OpenTelemetry Collector e o Jaeger:
+
+```bash
+OTEL_ENDPOINT=http://otel-collector:4317 docker compose -f docker-compose.full.yml --profile observabilidade up --build -d --wait
+python scripts/e2e_observabilidade.py
+```
+
+O script roda a saga e confere quatro coisas:
+
+- um trace com spans dos 3 serviços no Jaeger (`http://localhost:16686`);
+- as métricas de negócio no coletor (`http://localhost:8889/metrics`);
+- os logs da OS nos 3 serviços, com trace id (`observabilidade/saida/logs.jsonl`);
+- que o outbox do execution continua o trace.
+
+Dashboard e alertas do New Relic: [`docs/observability`](docs/observability).
+
 ### Localmente (sem Docker)
 
 1. Garanta que um MySQL 8.4 está rodando e ajuste a connection string em `appsettings.json`.
@@ -840,7 +873,8 @@ regras do Environment.
 | Variable | `INTERNAL_KEY_SECRET_ID` | secret `{"key"}` da chave interna, o mesmo da Lambda |
 | Secret | `AWS_DEPLOY_ROLE_ARN` | role do GitHub OIDC (a mesma da Fase 3) |
 | Secret | `SONAR_TOKEN` | SonarCloud (já cadastrado na Etapa 0) |
-| Secret | `NEW_RELIC_LICENSE_KEY` | opcional; sem ela, o agente fica desligado |
+| Secret | `NEW_RELIC_LICENSE_KEY` | opcional; com ela, o CD liga o OpenTelemetry → New Relic (OTLP) |
+| Variable | `NEW_RELIC_OTLP_ENDPOINT` | opcional; padrão `https://otlp.nr-data.net:4317` (conta na UE: `https://otlp.eu01.nr-data.net:4317`) |
 
 ---
 
