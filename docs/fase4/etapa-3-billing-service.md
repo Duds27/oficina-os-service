@@ -113,7 +113,7 @@ Gerar o orçamento e enviá-lo ao cliente, registrar a aprovação ou recusa, co
   - Webhook duplicado.
   - Falha temporária da API do MP (retry).
   - Estorno.
-  - Os payloads seguem a documentação do Mercado Pago. Os reais do sandbox entram com o spike S3, que foi para a [Etapa 5](etapa-5-observabilidade.md#50-implantação-na-aws).
+  - Os payloads seguem a documentação do Mercado Pago. Os reais do sandbox entram com o spike S3, que foi para a [Etapa 6](etapa-6-documentacao-entrega.md#60-implantação-na-aws-e-validação-no-new-relic).
   - Também ponta a ponta com RabbitMQ 4.1 e um bus no papel do os-service, do pedido de orçamento ao estorno.
 - [x] **Contrato:** snapshot das mensagens (as 9 do catálogo e o evento interno), com o serializador do MassTransit.
 - [x] Cobertura ≥ 80%: cerca de 96% de linhas. O `coverlet.runsettings` exclui só as migrations, que são código gerado.
@@ -137,7 +137,7 @@ Os seis entraram na `main` do `oficina-billing-service` pelo PR #2, um commit pa
 - [x] Um cliente não aprova orçamento de outro (testes de unidade e da API: 403).
 - [x] CI verde com cobertura ≥ 80%.
   - No CI do PR #2 e da `main`: 182 testes (149 unitários e 33 de integração) e os jobs `build-test-quality` e `terraform` verdes. Cobertura de 95,7% de linhas, calculada do relatório publicado pelo próprio CI. O gate de cobertura entra na Etapa 4.
-- **Movido para a [Etapa 4](etapa-4-plataforma-cicd.md#49-mercado-pago-no-sandbox) em 2026-11-16, e de lá para a [Etapa 5](etapa-5-observabilidade.md#50-implantação-na-aws) em 2026-11-17:** no sandbox, preferência criada, pagamento com cartão de teste, webhook recebido e validado, `PagamentoConfirmado` publicado e estorno realizado.
+- **Movido para a [Etapa 4](etapa-4-plataforma-cicd.md#49-mercado-pago-no-sandbox) em 2026-11-16, de lá para a Etapa 5 e, em 2026-11-17, para a [Etapa 6](etapa-6-documentacao-entrega.md#60-implantação-na-aws-e-validação-no-new-relic):** no sandbox, preferência criada, pagamento com cartão de teste, webhook recebido e validado, `PagamentoConfirmado` publicado e estorno realizado.
   - Depende do spike S3: conta de teste do Mercado Pago (vendedor e comprador), token de teste e segredo do webhook, e uma URL pública para o webhook.
   - A Etapa 4 cria a rota pública `POST /webhooks/mercadopago` no API Gateway, então o teste roda no ambiente de verdade, sem túnel.
   - O mesmo fluxo já passa contra o Mercado Pago simulado no WireMock.

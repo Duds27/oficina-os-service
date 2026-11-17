@@ -134,7 +134,7 @@ Os seis entraram na `main` do `oficina-execution-service` pelo PR #2, um commit 
 - [x] A flag de *fault injection* força `ExecucaoRejeitada` (teste com RabbitMQ).
 - [x] CI verde com cobertura ≥ 80%.
   - No CI do PR #2: 130 testes (100 unitários e 30 de integração) e os jobs `build-test-quality` e `terraform` verdes. Cobertura de 97,2% de linhas, calculada do relatório publicado pelo próprio CI. O gate de cobertura entra na Etapa 4.
-- **Movido para a [Etapa 4](etapa-4-plataforma-cicd.md#pronto-quando) em 2026-11-16, e de lá para a [Etapa 5](etapa-5-observabilidade.md#50-implantação-na-aws) em 2026-11-17:** o Terraform aplica sem erro, e o pod acessa a tabela via IRSA, sem chaves de acesso.
+- **Movido para a [Etapa 4](etapa-4-plataforma-cicd.md#pronto-quando) em 2026-11-16, de lá para a Etapa 5 e, em 2026-11-17, para a [Etapa 6](etapa-6-documentacao-entrega.md#60-implantação-na-aws-e-validação-no-new-relic):** o Terraform aplica sem erro, e o pod acessa a tabela via IRSA, sem chaves de acesso.
   - Aqui, foi validado só sem conta AWS (`validate` + `terraform test` com provider mockado).
   - Para conferir de verdade, faltam a ServiceAccount anotada e o deploy no EKS (manifestos da 4.3 e CD da 4.5), além do cluster no ar.
 

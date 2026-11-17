@@ -11,31 +11,7 @@ Seguir uma OS do início ao fim no New Relic, a ferramenta da Fase 3: um trace a
 
 ### 5.0 Implantação na AWS
 
-Veio da [Etapa 4](etapa-4-plataforma-cicd.md#pronto-quando) em 2026-11-17. O código, os testes e os pipelines ficaram prontos lá. Aqui fica o que depende da conta AWS e das configurações do GitHub. A validação desta etapa (5.7) roda no EKS, então este bloco vem antes dela. Os itens 5.1 a 5.6 podem andar antes, com a validação local.
-
-- [ ] **Credenciais.** As da AWS na máquina de desenvolvimento estavam inválidas em 2026-11-17 (`InvalidClientTokenId`). Os applies podem rodar pelos workflows (OIDC) ou com credenciais renovadas.
-- [ ] **Capacidade dos nós.** Decidir o tipo de instância antes do apply do `infra-k8s`. Com `t3.micro` (cerca de 400 MiB alocáveis), o pod do RabbitMQ (512 MiB) não cabe. No Free Plan, `t3.small` também é elegível. A conta está no [README do infra-k8s](https://github.com/Duds27/oficina-infra-k8s#capacidade-dos-nós-decidir-antes-do-apply).
-- [ ] **Role do deploy** (`AWS_DEPLOY_ROLE_ARN`, cadastrada em cada repo). Os secrets e os Environments da Fase 3 não existem mais nos repositórios. A role precisa de:
-  - push nos ECRs novos;
-  - acesso ao cluster (o criador vira admin pelo `enable_cluster_creator_admin_permissions`);
-  - leitura dos secrets novos (`rabbitmq/*`, `billing/*` e a chave interna).
-- [ ] **Applies, nesta ordem:**
-  1. `oficina-infra-k8s` (homolog);
-  2. o `infra/` do billing e do execution, pelo `infra.yml` (variables `AWS_REGION`, `TF_STATE_BUCKET` e `TF_LOCK_TABLE` no repositório);
-  3. `oficina-lambda-auth`, pelo CD no push em `homolog`.
-- [ ] **Secret da chave interna** (`{"key": "..."}`). Cadastrar o `INTERNAL_KEY_SECRET_ID` na Lambda e no os-service.
-- [ ] **GitHub:**
-  - criar as branches `homolog` e `prod`, que só recebem merge da `main` por PR;
-  - criar os Environments `homolog`, `prod` (com aprovação) e `infra` (com *required reviewers*; hoje ele existe sem regra, e o apply rodaria sem aprovação);
-  - cadastrar as variables de cada repo (README, seção CD).
-- [ ] **Deploy.** Push em `homolog` em cada serviço, e o CD faz o deploy. Depois, apagar o namespace `oficina` da Fase 3.
-- [ ] **Sandbox do Mercado Pago** (era a 4.9; spike S3):
-  - contas de teste (vendedor e comprador);
-  - token de teste e segredo do webhook no secret `billing/mercadopago`, preenchidos à mão;
-  - `Pagamentos__Gateway=MercadoPago` no overlay `aws` do billing (a `NotificationUrl` já sai da URL do API Gateway);
-  - os 4 passos do spike;
-  - payloads reais nos testes com WireMock;
-  - resultado registrado no [ADR-009](../architecture/adrs/ADR-009-mercado-pago.md).
+Veio da [Etapa 4](etapa-4-plataforma-cicd.md#pronto-quando) em 2026-11-17. **Movido para a [Etapa 6](etapa-6-documentacao-entrega.md#60-implantação-na-aws-e-validação-no-new-relic) em 2026-11-17**, por decisão do grupo: credenciais, capacidade dos nós, role do deploy, applies, secret da chave interna, branches e Environments do GitHub, deploy e o sandbox do Mercado Pago. A lista completa está lá (6.0). A Etapa 6 já precisa do ambiente na AWS para o vídeo.
 
 ### 5.1 Traces (conforme o resultado do spike S2)
 
@@ -50,8 +26,7 @@ Veio da [Etapa 4](etapa-4-plataforma-cicd.md#pronto-quando) em 2026-11-17. O có
     - **Quando exporta.** Só com `OTEL_EXPORTER_OTLP_ENDPOINT`. No EKS, o CD grava o endpoint do New Relic e o header `api-key` no Secret, e só quando há license key. O overlay aws passa a temporalidade delta e o limite de atributos (4095). A imagem recebe o SHA em `SERVICE_VERSION`.
     - **Outbox do execution.** Ele publica numa thread separada, então o trace se perdia ali. O item agora grava o `traceparent` de quem escreveu, e a publicação abre o span `outbox publish <Evento>` como filho dele. Os outboxes do MassTransit (os e billing) já guardam o contexto.
 - [x] Se o `os-service` trocar o agente New Relic por OTel, remover o agente da imagem para não instrumentar em dobro. O agente e as variáveis `CORECLR_*` saíram do Dockerfile, e o `NEW_RELIC_APP_NAME` saiu do overlay.
-- [ ] Na chamada ao Mercado Pago, o span HTTP de saída já aparece via HttpClient. Conferir se ele fica dentro do trace do consumer.
-  - O HttpClient está instrumentado. Com o gateway Fake não há chamada HTTP, então a conferência fica para o sandbox (5.0 e 5.7).
+- **Movido para a [Etapa 6](etapa-6-documentacao-entrega.md#60-implantação-na-aws-e-validação-no-new-relic) em 2026-11-17** (6.0), com o sandbox: na chamada ao Mercado Pago, o span HTTP de saída já aparece via HttpClient; conferir se ele fica dentro do trace do consumer. O HttpClient está instrumentado, mas com o gateway Fake não há chamada HTTP.
 
 ### 5.2 Logs correlacionados
 
@@ -120,9 +95,11 @@ Veio da [Etapa 4](etapa-4-plataforma-cicd.md#pronto-quando) em 2026-11-17. O có
 
 ### 5.7 Validação
 
-- [ ] Rodar o caminho feliz e o cenário de estorno no EKS.
-- [ ] Encontrar o trace pelo `NumeroOS` e conferir o service map com os 3 serviços + RabbitMQ.
-- [ ] Capturas para a documentação e o vídeo: trace, service map, dashboard e um alerta disparado.
+**Movido para a [Etapa 6](etapa-6-documentacao-entrega.md#60-implantação-na-aws-e-validação-no-new-relic) em 2026-11-17** (6.0), porque roda no EKS e no New Relic. Até lá, a validação local está nos itens abaixo e no "Pronto quando":
+
+- rodar o caminho feliz e o cenário de estorno no EKS;
+- encontrar o trace pelo `NumeroOS` e conferir o service map com os 3 serviços + RabbitMQ;
+- capturas para a documentação e o vídeo: trace, service map, dashboard e um alerta disparado.
 
 ## PRs sugeridos
 
@@ -135,15 +112,18 @@ Nas branches `feat/etapa-5-observabilidade` (os 3 serviços) e `feat/etapa-5-rab
 
 ## Pronto quando
 
-- [ ] Da Etapa 4:
-  - um merge em `homolog` de qualquer serviço builda, testa, publica a imagem e faz o rollout no EKS sem passo manual;
-  - os 3 serviços + RabbitMQ rodam no EKS, acessíveis pelo API Gateway com JWT, e o webhook é acessível sem JWT.
-- [ ] O Terraform do `execution-service` aplica sem erro, e o pod acessa a tabela via IRSA, sem chaves de acesso (veio da Etapa 2, via Etapa 4).
-- [ ] No sandbox do Mercado Pago: preferência criada, pagamento com cartão de teste, webhook recebido pelo API Gateway e validado, `PagamentoConfirmado` publicado e estorno realizado (veio da Etapa 3, via Etapa 4).
-- [ ] Um único trace no New Relic cobre: requisição HTTP → publish → consumer no outro serviço → chamada ao Mercado Pago → evento de volta.
-  - **Conferido fora do New Relic em 2026-11-17**, com o perfil `observabilidade` do `docker-compose.full.yml` (OpenTelemetry Collector + Jaeger) e o `scripts/e2e_observabilidade.py`. O trace do pagamento tem 159 spans nos 3 serviços. Ele começa na simulação do pagamento no billing e passa pelo outbox, por `PagamentoConfirmado`, pela saga do os-service, por `IniciarExecucao` e pelo outbox do execution, até `ExecucaoIniciada` voltar ao os-service.
-  - Faltam o New Relic (5.0) e a chamada real ao Mercado Pago (sandbox).
-- [ ] Filtrar os logs por `NumeroOS` mostra os 3 serviços.
-  - No mesmo teste, os logs com o `NumeroOS` da rodada chegaram dos 3 serviços ao coletor, todos com trace id. No New Relic, depende do 5.0.
-- [ ] O dashboard "Saga de OS" e os alertas estão versionados e aplicados.
-  - Versionados e testados (`terraform test`). O apply precisa da conta e da User key do New Relic, e os dados só chegam com os serviços no EKS (5.0).
+- [x] Um único trace cobre: requisição HTTP → publish → consumer no outro serviço → evento de volta, atravessando os 3 serviços e o RabbitMQ.
+  - Conferido em 2026-11-17 fora do New Relic, com o perfil `observabilidade` do `docker-compose.full.yml` (OpenTelemetry Collector + Jaeger) e o `scripts/e2e_observabilidade.py`. O trace do pagamento tem 159 spans nos 3 serviços. Ele começa na simulação do pagamento no billing e passa pelo outbox, por `PagamentoConfirmado`, pela saga do os-service, por `IniciarExecucao` e pelo outbox do execution, até `ExecucaoIniciada` voltar ao os-service.
+  - Os dados vão para o New Relic pelo mesmo OTLP: o CD só troca o endpoint e põe a license key.
+- [x] Filtrar os logs por `NumeroOS` mostra os 3 serviços.
+  - No mesmo teste, os logs com o `NumeroOS` da rodada chegaram dos 3 serviços ao coletor, todos com o trace id.
+- [x] O dashboard "Saga de OS" e os alertas estão versionados.
+  - Versionados e testados (`terraform test`, 6 casos, no CI do os-service).
+- **Movido para a [Etapa 6](etapa-6-documentacao-entrega.md#60-implantação-na-aws-e-validação-no-new-relic) em 2026-11-17** (6.0), porque dependem da conta AWS, do New Relic com dados ou do sandbox:
+  - da Etapa 4: um merge em `homolog` de qualquer serviço builda, testa, publica a imagem e faz o rollout no EKS sem passo manual; os 3 serviços + RabbitMQ rodam no EKS, acessíveis pelo API Gateway com JWT, e o webhook é acessível sem JWT;
+  - o Terraform do `execution-service` aplica sem erro, e o pod acessa a tabela via IRSA, sem chaves de acesso (veio da Etapa 2, via Etapa 4);
+  - no sandbox do Mercado Pago: preferência criada, pagamento com cartão de teste, webhook recebido pelo API Gateway e validado, `PagamentoConfirmado` publicado e estorno realizado (veio da Etapa 3, via Etapa 4);
+  - o mesmo trace no New Relic, com a chamada real ao Mercado Pago, e os logs por `NumeroOS` lá;
+  - o dashboard e os alertas aplicados (`terraform apply` com a User key) e mostrando dados.
+
+**Etapa concluída em 2026-11-17.**
