@@ -9,7 +9,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write # OIDC → role AWS
   contents: read
 
 concurrency:
@@ -27,6 +26,9 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name }}
+    permissions:
+      id-token: write # OIDC → role AWS
+      contents: read
     env:
       APP: os-service
       NAMESPACE: oficina-os
@@ -55,14 +57,14 @@ jobs:
           fi
 
       - name: Configurar credenciais AWS (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Login no ECR
         id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
 
       - name: Build e push da imagem
         env:
