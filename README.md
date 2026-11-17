@@ -27,8 +27,9 @@ serverless, infraestrutura como código, CI/CD por repositório e observabilidad
 ### Deploy em produção (AWS/EKS)
 
 O app usa o overlay `k8s/overlays/aws` (RDS + NLB via TargetGroupBinding); o deploy é
-automático pelas branches `homolog`/`prod` (`.github/workflows/cd-aws.yml`). Detalhes e
-pré-requisitos: [docs/fase3-entrega.md](docs/fase3-entrega.md).
+automático pelas branches `homolog`/`prod` (`.github/workflows/cd.yml`, que na Fase 3 era o
+`cd-aws.yml`; veja a seção [CD](#cd)). Detalhes e pré-requisitos da Fase 3:
+[docs/fase3-entrega.md](docs/fase3-entrega.md).
 
 - 🚀 **Provisionar a infra na AWS (passo a passo):** [docs/aws-setup.md](docs/aws-setup.md).
 
@@ -778,6 +779,35 @@ O `.github/workflows/ci.yml` roda em PR e push na `main`, e o CD o reutiliza (`w
 - **SonarCloud** (projeto `Duds27_oficina-os-service`): análise com `dotnet-sonarscanner`, cobertura em opencover e `sonar.qualitygate.wait=true`. Quality gate reprovado derruba o job. Em PR de fork ou do Dependabot, sem o `SONAR_TOKEN`, os passos do Sonar são pulados.
 - O Sonar usa as mesmas exclusões do `coverlet.runsettings`: as migrations saem da análise toda; `Program.cs` e `DTOs/` saem só da cobertura.
 - A análise local com SonarQube em Docker (seção abaixo) continua valendo para quem quiser rodar sem o CI.
+
+### CD
+
+O `.github/workflows/cd.yml` faz o deploy no EKS a cada push em `homolog` ou `prod`. Antes, chama o
+CI (`workflow_call`), e o deploy só roda se testes, cobertura e quality gate passarem no mesmo
+commit. O job usa o Environment com o nome da branch. Em `prod`, a aprovação fica nas
+regras do Environment.
+
+1. Confere as variables do Environment e para com a lista do que falta.
+2. Builda e publica a imagem no ECR com a tag do commit.
+3. Monta o Secret `os-service-secrets` a partir do Secrets Manager, com os valores mascarados no log. A senha do admin da equipe é opcional no secret do JWT (`{"key", "adminPassword"}`); sem ela, vale a do `appsettings.json`.
+4. Troca a imagem e os placeholders do overlay `aws`. Placeholder sem valor derruba o deploy antes do `apply`.
+5. `kubectl apply`, anota o pod com o hash do Secret (credencial trocada sem mudança de código também
+   reinicia os pods) e espera o rollout (300 s).
+6. Smoke test: um pod com `curl` chama `http://os-service/health/ready` dentro do namespace `oficina-os`.
+
+| Tipo (Environment `homolog`/`prod`) | Nome | De onde vem |
+| --- | --- | --- |
+| Variable | `AWS_REGION` | `us-east-1` |
+| Variable | `ECR_REPOSITORY` | repositório ECR do os-service (da Fase 3) |
+| Variable | `EKS_CLUSTER_NAME` | saída `cluster_name` do `oficina-infra-k8s` |
+| Variable | `TARGET_GROUP_ARN` | saída `target_group_arns["os"]` do `oficina-infra-k8s` |
+| Variable | `RABBITMQ_SECRET_ID` | saída `rabbitmq_secret_ids["os"]` do `oficina-infra-k8s` |
+| Variable | `JWT_SECRET_ID` | secret `{"key"}` da chave do JWT, o mesmo da Lambda |
+| Variable | `DB_SECRET_ID` | secret do MySQL do `oficina-infra-database` (`host`, `port`, `username`, `password`, `dbname`) |
+| Variable | `INTERNAL_KEY_SECRET_ID` | secret `{"key"}` da chave interna, o mesmo da Lambda |
+| Secret | `AWS_DEPLOY_ROLE_ARN` | role do GitHub OIDC (a mesma da Fase 3) |
+| Secret | `SONAR_TOKEN` | SonarCloud (já cadastrado na Etapa 0) |
+| Secret | `NEW_RELIC_LICENSE_KEY` | opcional; sem ela, o agente fica desligado |
 
 ---
 
