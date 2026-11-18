@@ -36,7 +36,7 @@ flowchart TB
       pg[("RDS PostgreSQL 16<br/>orçamentos + pagamentos + outbox")]
     end
 
-    dynamo[("DynamoDB<br/>execuções, fila, outbox<br/>(IRSA)")]
+    dynamo[("DynamoDB<br/>execuções, fila, outbox<br/>(Pod Identity)")]
     secrets[("Secrets Manager")]
   end
 
@@ -76,7 +76,7 @@ flowchart TB
 | billing-service | EKS, `oficina-billing` | Orçamento a partir do diagnóstico, aprovação ou recusa pelo cliente, cobrança e estorno no Mercado Pago (webhook com assinatura). |
 | execution-service | EKS, `oficina-execution` | Fila da oficina, diagnóstico, reparo e finalização. |
 | RabbitMQ | EKS, `messaging` | Comandos (filas por serviço) e eventos (exchanges). Um usuário por serviço, volume EBS gp3. |
-| Bancos | RDS MySQL, RDS PostgreSQL, DynamoDB | Um banco por serviço (ADR-008). O DynamoDB é acessado pela role IRSA do pod, sem chaves. |
+| Bancos | RDS MySQL, RDS PostgreSQL, DynamoDB | Um banco por serviço (ADR-008). O DynamoDB é acessado pela role do pod, entregue pelo EKS Pod Identity, sem chaves (ADR-011). |
 | Outbox/inbox | Nos 3 serviços | Estado e mensagens gravados juntos (MassTransit EF outbox no MySQL e no PostgreSQL; outbox próprio no DynamoDB). O inbox descarta mensagem repetida. |
 | Secrets Manager | AWS | Credenciais dos bancos e do RabbitMQ, chave do JWT, chave interna e as credenciais do Mercado Pago. |
 | Observabilidade | New Relic | Traces distribuídos (o contexto passa pelos headers das mensagens), métricas de negócio, logs ligados ao trace, dashboard "Saga de OS" e alertas. |

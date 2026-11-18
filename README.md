@@ -24,6 +24,7 @@ e a collection Postman.
 | Observabilidade (OpenTelemetry → New Relic, dashboard, alertas) | [`docs/observability`](docs/observability/README.md) |
 | Sistema completo local, seed e saga de ponta a ponta | [Sistema completo](#sistema-completo-os-3-microsserviços) e [Observabilidade](#observabilidade-fase-4) |
 | Collection Postman e environments | [`postman/`](postman) |
+| AWS: runbook da conta da Fase 4 (`us-east-2`, Pod Identity, CI com chave de acesso) | [`docs/aws-setup-fase4.md`](docs/aws-setup-fase4.md) |
 | Documento de entrega (PDF) e roteiro do vídeo | [`docs/entrega-fase4.md`](docs/entrega-fase4.md) · [`docs/roteiro-video-fase4.md`](docs/roteiro-video-fase4.md) |
 | Outros serviços | [`oficina-billing-service`](https://github.com/Duds27/oficina-billing-service) · [`oficina-execution-service`](https://github.com/Duds27/oficina-execution-service) |
 | Plataforma | [`oficina-infra-k8s`](https://github.com/Duds27/oficina-infra-k8s) · [`oficina-lambda-auth`](https://github.com/Duds27/oficina-lambda-auth) · [`oficina-infra-database`](https://github.com/Duds27/oficina-infra-database) |
@@ -1000,15 +1001,16 @@ regras do Environment.
 
 | Tipo (Environment `homolog`/`prod`) | Nome | De onde vem |
 | --- | --- | --- |
-| Variable | `AWS_REGION` | `us-east-1` |
-| Variable | `ECR_REPOSITORY` | repositório ECR do os-service (da Fase 3) |
+| Variable | `AWS_REGION` | `us-east-2` (a única região liberada na conta do grupo) |
+| Variable | `ECR_REPOSITORY` | repositório ECR do os-service, criado no bootstrap ([`docs/aws-setup-fase4.md`](docs/aws-setup-fase4.md)) |
 | Variable | `EKS_CLUSTER_NAME` | saída `cluster_name` do `oficina-infra-k8s` |
 | Variable | `TARGET_GROUP_ARN` | saída `target_group_arns["os"]` do `oficina-infra-k8s` |
 | Variable | `RABBITMQ_SECRET_ID` | saída `rabbitmq_secret_ids["os"]` do `oficina-infra-k8s` |
 | Variable | `JWT_SECRET_ID` | secret `{"key"}` da chave do JWT, o mesmo da Lambda |
 | Variable | `DB_SECRET_ID` | secret do MySQL do `oficina-infra-database` (`host`, `port`, `username`, `password`, `dbname`) |
 | Variable | `INTERNAL_KEY_SECRET_ID` | secret `{"key"}` da chave interna, o mesmo da Lambda |
-| Secret | `AWS_DEPLOY_ROLE_ARN` | role do GitHub OIDC (a mesma da Fase 3) |
+| Secret | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | chave do usuário IAM do CI, na conta sem OIDC ([README do infra-k8s](https://github.com/Duds27/oficina-infra-k8s#conta-aws)). O usuário precisa ser admin do cluster (`cluster_admin_arns`) |
+| Secret | `AWS_DEPLOY_ROLE_ARN` | alternativa às chaves, numa conta que permita o provider OIDC: role do GitHub OIDC. Cadastre só uma das duas formas |
 | Secret | `SONAR_TOKEN` | SonarCloud (já cadastrado na Etapa 0) |
 | Secret | `NEW_RELIC_LICENSE_KEY` | opcional; com ela, o CD liga o OpenTelemetry → New Relic (OTLP) |
 | Variable | `NEW_RELIC_OTLP_ENDPOINT` | opcional; padrão `https://otlp.nr-data.net:4317` (conta na UE: `https://otlp.eu01.nr-data.net:4317`) |
