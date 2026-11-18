@@ -138,7 +138,7 @@ terraform init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=in
   -backend-config="region=$AWS_REGION" -backend-config="dynamodb_table=$TF_LOCK_TABLE"
 K8S_VARS=(-var="environment=$ENV" -var='node_instance_types=["t3.small"]'
   -var="cluster_admin_arns=[\"arn:aws:iam::$ACCOUNT:user/github-actions-oficina\"]")
-terraform apply -target=module.eks "${K8S_VARS[@]}"   # 1º: VPC e EKS (o provider kubectl precisa do cluster)
+terraform apply -target=module.vpc -target=module.eks "${K8S_VARS[@]}"   # 1º: VPC e EKS (o provider kubectl precisa do cluster)
 terraform apply "${K8S_VARS[@]}"                      # 2º: add-ons, RabbitMQ, namespaces e NLB
 terraform output
 cd ../oficina-infra-database
@@ -148,9 +148,12 @@ terraform apply -var="environment=$ENV" -var="state_bucket=$TF_STATE_BUCKET"
 cd ..
 ```
 
-- O infra-k8s sobe em dois applies. No primeiro, só a VPC e o EKS (`-target=module.eks`), porque
-  o provider `kubectl` não aceita o endpoint do cluster ainda desconhecido. O CD faz o mesmo quando o
-  cluster não existe.
+- O infra-k8s sobe em dois applies. No primeiro, só a VPC e o EKS (`-target=module.vpc -target=module.eks`),
+  porque o provider `kubectl` não aceita o endpoint do cluster ainda desconhecido. O CD faz o mesmo
+  quando o cluster não existe.
+  - Os dois `-target` são necessários. Com `-target=module.eks` sozinho, a VPC sobe sem NAT, Internet
+    Gateway e rotas, e os nós não entram no cluster: o node group fica em `CREATING` e o console das
+    instâncias mostra o `nodeadm` repetindo `EC2/DescribeInstances`.
 - O infra-k8s leva de 15 a 20 minutos e o RDS cerca de 10.
 - Com `t3.micro`, o pod do RabbitMQ não cabe. A conta está no [README do infra-k8s](https://github.com/Duds27/oficina-infra-k8s#capacidade-dos-nós-decidir-antes-do-apply).
 
