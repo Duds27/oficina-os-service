@@ -1,5 +1,9 @@
 # Runbook — Provisionar a Infra na AWS (passo a passo)
 
+> **Fase 4:** use o [`aws-setup-fase4.md`](aws-setup-fase4.md). A conta do grupo mudou e só libera a
+> `us-east-2`. Também não permite provider OIDC no IAM, então os pods usam Pod Identity e o CI entra
+> com chave de acesso. Este documento é o da Fase 3, mantido como histórico.
+
 Cria toda a infraestrutura da Fase 3 na AWS: VPC + EKS, RDS MySQL, Lambda + API Gateway e o
 deploy da aplicação. Há dois caminhos:
 

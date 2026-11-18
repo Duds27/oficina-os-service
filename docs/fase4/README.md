@@ -234,9 +234,9 @@ Para a demo, o `execution-service` tem uma flag `FaultInjection__RejeitarExecuca
 | --- | --- | --- |
 | `oficina-os-service` | **Renomear** `tech-challenge-fiap` (o GitHub redireciona as URLs antigas) | Saga + mensageria + histórico + endpoint interno p/ Lambda; remover aprovação de orçamento |
 | `oficina-billing-service` | **Novo** | Serviço completo + Terraform do RDS PostgreSQL |
-| `oficina-execution-service` | **Novo** | Serviço completo + Terraform da tabela DynamoDB + IAM (IRSA) |
+| `oficina-execution-service` | **Novo** | Serviço completo + Terraform da tabela DynamoDB + IAM (Pod Identity; era IRSA, veja o ADR-011) |
 | `oficina-lambda-auth` | Existente | Lambda via HTTP no `os-service`; rotas do API GW por serviço; rota pública do webhook |
-| `oficina-infra-k8s` | Existente | RabbitMQ, namespaces, listeners/target groups do NLB por serviço, EBS CSI (se faltar), OIDC/IRSA |
+| `oficina-infra-k8s` | Existente | RabbitMQ, namespaces, listeners/target groups do NLB por serviço, EBS CSI (se faltar), agente do Pod Identity |
 | `oficina-infra-database` | Existente | Sem mudança funcional. Documentar que é a infra de banco do `os-service` |
 
 Estrutura padrão de cada microsserviço (espelha o monólito atual):

@@ -13,8 +13,8 @@ os-service. Os serviços rodam no EKS e se comunicam por RabbitMQ. Plano da Fase
 - [Observabilidade](../observability/README.md): OpenTelemetry → New Relic, dashboard "Saga de OS" e alertas.
 - Contratos HTTP: `docs/openapi.json` de cada serviço e a collection Postman em [`postman/`](../../postman).
 
-**ADRs da Fase 4.** O status é *Proposto* até a revisão do grupo. Todas estão implementadas, e cada uma
-termina com o resultado da implementação.
+**ADRs da Fase 4.** O status é *Proposto* até a revisão do grupo. As de 005 a 010 estão implementadas, e
+cada uma termina com o resultado da implementação. A 011 adapta a infra à conta AWS do grupo.
 
 - [ADR-005 — Divisão em três microsserviços](adrs/ADR-005-microsservicos.md)
 - [ADR-006 — Saga orquestrada no `os-service`](adrs/ADR-006-saga-orquestrada.md)
@@ -22,6 +22,7 @@ termina com o resultado da implementação.
 - [ADR-008 — Persistência poliglota](adrs/ADR-008-persistencia-poliglota.md)
 - [ADR-009 — Pagamento com Mercado Pago (Checkout Pro)](adrs/ADR-009-mercado-pago.md)
 - [ADR-010 — Observabilidade distribuída com OpenTelemetry](adrs/ADR-010-opentelemetry.md)
+- [ADR-011 — Conta AWS restrita: `us-east-2`, EKS Pod Identity e chave de acesso no CI](adrs/ADR-011-conta-aws-restrita.md)
 
 ## Mapa dos repositórios
 
@@ -29,7 +30,7 @@ termina com o resultado da implementação.
 | --- | --- |
 | [`oficina-os-service`](https://github.com/Duds27/oficina-os-service) | Clientes, veículos, catálogo, OS e a saga. Também guarda a documentação geral, o compose completo e a collection Postman. |
 | [`oficina-billing-service`](https://github.com/Duds27/oficina-billing-service) | Orçamento, aprovação, pagamento e estorno (Mercado Pago). Terraform do RDS PostgreSQL. |
-| [`oficina-execution-service`](https://github.com/Duds27/oficina-execution-service) | Fila da oficina, diagnóstico, reparo e finalização. Terraform da tabela DynamoDB e da role IRSA. |
+| [`oficina-execution-service`](https://github.com/Duds27/oficina-execution-service) | Fila da oficina, diagnóstico, reparo e finalização. Terraform da tabela DynamoDB e da role do pod (Pod Identity). |
 | [`oficina-lambda-auth`](https://github.com/Duds27/oficina-lambda-auth) | Lambda de autenticação por CPF e API Gateway (rotas por serviço) |
 | [`oficina-infra-k8s`](https://github.com/Duds27/oficina-infra-k8s) | VPC, EKS, add-ons, RabbitMQ (Cluster Operator), namespaces e NLB por serviço |
 | [`oficina-infra-database`](https://github.com/Duds27/oficina-infra-database) | RDS MySQL do os-service |

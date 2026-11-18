@@ -13,24 +13,28 @@ Fechar os entregáveis do enunciado: repositórios documentados com evidências,
 
 Veio da [Etapa 5](etapa-5-observabilidade.md#pronto-quando) em 2026-11-17 (e, antes, das Etapas 2, 3 e 4). O código, os testes, os pipelines e a observabilidade estão prontos e validados fora da AWS. Aqui ficam os passos que dependem da conta AWS, das configurações do GitHub, do New Relic e do Mercado Pago. Eles também são pré-requisito do vídeo (6.4).
 
-**Implantação** (o que era a 5.0):
+**Implantação** (o que era a 5.0). O passo a passo, com os comandos, está em [`aws-setup-fase4.md`](../aws-setup-fase4.md).
 
-- [ ] **Credenciais.** As da AWS na máquina de desenvolvimento estavam inválidas em 2026-11-17 (`InvalidClientTokenId`). Os applies podem rodar pelos workflows (OIDC) ou com credenciais renovadas.
+- [x] **Credenciais.** Renovadas em 2026-11-17: usuário IAM com `AdministratorAccess` na máquina de desenvolvimento.
+- [x] **Restrições da conta** ([ADR-011](../architecture/adrs/ADR-011-conta-aws-restrita.md)). A conta é do Free plan, numa organização gerenciada pela AWS, e as SCPs:
+  - **Região:** só liberam a `us-east-2`. Ela virou a região padrão dos Terraform.
+  - **OIDC:** negam o provider OIDC no IAM. As roles dos pods passaram a vir do **EKS Pod Identity**, e o CI entra com a **chave de acesso de um usuário IAM**. Os workflows também aceitam OIDC, para outra conta.
 - [ ] **Capacidade dos nós.** Decidir o tipo de instância antes do apply do `infra-k8s`. Com `t3.micro` (cerca de 400 MiB alocáveis), o pod do RabbitMQ (512 MiB) não cabe. No Free Plan, `t3.small` também é elegível. A conta está no [README do infra-k8s](https://github.com/Duds27/oficina-infra-k8s#capacidade-dos-nós-decidir-antes-do-apply).
-- [ ] **Role do deploy** (`AWS_DEPLOY_ROLE_ARN`, cadastrada em cada repo). Os secrets e os Environments da Fase 3 não existem mais nos repositórios. A role precisa de:
-  - push nos ECRs novos;
-  - acesso ao cluster (o criador vira admin pelo `enable_cluster_creator_admin_permissions`);
-  - leitura dos secrets novos (`rabbitmq/*`, `billing/*` e a chave interna).
+- [ ] **Bootstrap da conta nova:**
+  - bucket do estado e tabela de lock na `us-east-2`;
+  - ECR do os-service;
+  - segredos `oficina/jwt` e `oficina/internal-key`.
+- [ ] **Usuário IAM do CI** (`github-actions-oficina`). A chave dele vai nos secrets `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` dos 6 repositórios. Ele vira admin do cluster pela variable `EKS_ADMIN_ARNS` do infra-k8s.
 - [ ] **Applies, nesta ordem:**
   1. `oficina-infra-k8s` (homolog);
   2. o `infra/` do billing e do execution, pelo `infra.yml` (variables `AWS_REGION`, `TF_STATE_BUCKET` e `TF_LOCK_TABLE` no repositório);
   3. `oficina-lambda-auth`, pelo CD no push em `homolog`.
-- [ ] **Secret da chave interna** (`{"key": "..."}`). Cadastrar o `INTERNAL_KEY_SECRET_ID` na Lambda e no os-service.
+- [ ] **Chave interna:** cadastrar o `INTERNAL_KEY_SECRET_ID` (`oficina/internal-key`) na Lambda e no os-service.
 - [ ] **GitHub:**
   - criar as branches `homolog` e `prod`, que só recebem merge da `main` por PR;
   - criar os Environments `homolog`, `prod` (com aprovação) e `infra` (com *required reviewers*; hoje ele existe sem regra, e o apply rodaria sem aprovação);
   - cadastrar as variables de cada repo (README, seção CD).
-- [ ] **Deploy.** Push em `homolog` em cada serviço, e o CD faz o deploy. Depois, apagar o namespace `oficina` da Fase 3.
+- [ ] **Deploy.** Push em `homolog` em cada serviço, e o CD faz o deploy. A conta é nova, então não há nada da Fase 3 para apagar.
 - [ ] **Sandbox do Mercado Pago** (era a 4.9; spike S3):
   - contas de teste (vendedor e comprador);
   - token de teste e segredo do webhook no secret `billing/mercadopago`, preenchidos à mão;
@@ -139,7 +143,7 @@ Veio da [Etapa 5](etapa-5-observabilidade.md#pronto-quando) em 2026-11-17 (e, an
 - [ ] Da 6.0 (vieram das Etapas 2 a 5):
   - um merge em `homolog` de qualquer serviço builda, testa, publica a imagem e faz o rollout no EKS sem passo manual;
   - os 3 serviços + RabbitMQ rodam no EKS, acessíveis pelo API Gateway com JWT, e o webhook é acessível sem JWT;
-  - o Terraform do `execution-service` aplica sem erro, e o pod acessa a tabela via IRSA, sem chaves de acesso;
+  - o Terraform do `execution-service` aplica sem erro, e o pod acessa a tabela pela role do Pod Identity, sem chaves de acesso;
   - no sandbox do Mercado Pago: preferência criada, pagamento com cartão de teste, webhook recebido pelo API Gateway e validado, `PagamentoConfirmado` publicado e estorno realizado;
   - um único trace no New Relic cobre a requisição HTTP, o publish, o consumer no outro serviço, a chamada ao Mercado Pago e o evento de volta; filtrar os logs por `NumeroOS` mostra os 3 serviços;
   - o dashboard "Saga de OS" e os alertas aplicados e mostrando dados.

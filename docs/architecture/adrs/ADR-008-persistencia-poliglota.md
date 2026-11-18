@@ -29,7 +29,7 @@ Cada microsserviço ([ADR-005](ADR-005-microsservicos.md)) precisa de um banco p
 **Credenciais:**
 
 - RDS: usuários próprios por serviço, guardados no Secrets Manager.
-- DynamoDB: acesso via IRSA, com uma role restrita à tabela do serviço.
+- DynamoDB: acesso por uma role restrita à tabela do serviço, entregue ao pod pelo EKS Pod Identity ([ADR-011](ADR-011-conta-aws-restrita.md)).
 
 ## Consequências
 
@@ -53,5 +53,5 @@ Cada microsserviço ([ADR-005](ADR-005-microsservicos.md)) precisa de um banco p
 
 - **os-service:** MySQL 8.4, o RDS da Fase 3. Novas tabelas: histórico de status, saga e outbox/inbox.
 - **billing-service:** PostgreSQL 16 num RDS próprio, criado pelo `infra/` do repositório. É privado (só o SG dos nós do EKS acessa), e as credenciais ficam no Secrets Manager. Concorrência otimista por `xmin`.
-- **execution-service:** DynamoDB numa tabela única com dois GSIs (fila por etapa e outbox), acessado pela role IRSA da ServiceAccount, sem chaves. Transações com `TransactWriteItems` e condição na versão.
+- **execution-service:** DynamoDB numa tabela única com dois GSIs (fila por etapa e outbox), acessado pela role que o EKS Pod Identity associa à ServiceAccount, sem chaves. Era IRSA até a conta da Fase 4 negar o provider OIDC no IAM ([ADR-011](ADR-011-conta-aws-restrita.md)). Transações com `TransactWriteItems` e condição na versão.
 - Modelos e padrões de acesso: [`database-model.md`](../database-model.md).
