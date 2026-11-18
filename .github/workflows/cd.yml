@@ -91,8 +91,11 @@ jobs:
           NEW_RELIC_OTLP_ENDPOINT: ${{ vars.NEW_RELIC_OTLP_ENDPOINT }}
         run: |
           set -euo pipefail
+          exec 3>&1
           ler() { aws secretsmanager get-secret-value --secret-id "$1" --query SecretString --output text; }
-          campo() { local v; v=$(jq -r "$2 // empty" <<<"$1"); [ -n "$v" ] && echo "::add-mask::$v"; printf '%s' "$v"; }
+          # O ::add-mask:: vai pelo descritor 3, que é o stdout do passo (exec abaixo). Com um echo
+          # comum, dentro de $(campo ...) ele entrava no próprio valor ("::add-mask::3306\n3306").
+          campo() { local v; v=$(jq -r "$2 // empty" <<<"$1"); [ -n "$v" ] && echo "::add-mask::$v" >&3; printf '%s' "$v"; }
           args=()
 
           MQ=$(ler "$RABBITMQ_SECRET_ID")
